@@ -1,0 +1,26 @@
+nanomirrors
+Copyright 2026 WindMirror Authors
+
+This project is licensed under the Apache License, Version 2.0, unless
+otherwise noted in an individual file or component.
+
+IMPORTANT: The Apache-2.0 license in this repository applies to the
+nanomirrors software implementation itself. It does not automatically
+apply to third-party assets used with nanomirrors, including pretrained
+model weights, checkpoints, datasets, tokenizers, vocabularies, or other
+artifacts obtained from external providers.
+
+Such third-party assets remain subject to the licenses and terms imposed
+by their respective owners or providers.
+
+For example, a nanomirrors implementation of a model architecture may be
+Apache-2.0 licensed while official pretrained weights for that model are
+distributed under a different, including non-commercial, license.
+
+Users are responsible for reviewing and complying with the applicable
+license for any third-party asset they download, load, convert, evaluate,
+fine-tune, or redistribute with nanomirrors.
+
+Third-party source code incorporated or adapted into this repository, if
+any, retains all notices and licensing obligations required by its
+original license.

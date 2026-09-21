@@ -1,0 +1,7 @@
+.DS_Store
+perturb-datasets/
+pull_latest_perturb_dataset.sh
+src/nanomirrors/models/*/*__pycache__/
+src/nanomirrors/data/*__pycache__/
+src/nanomirrors.egg-info/*
+src/nanomirrors/*__pycache__/
