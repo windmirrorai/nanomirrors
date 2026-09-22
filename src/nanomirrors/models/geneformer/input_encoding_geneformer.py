@@ -194,8 +194,14 @@ class GeneformerInputEncoder:
         self.gene_names = gene_names
         self.tokenizer = GeneformerTokenizer.from_pretrained(tokenizer_type)
 
-    def encode(self, batch: dict) -> dict:
-        encoded_inputs = self.tokenizer.encode(batch["exprs"], self.gene_names)
+    def encode(self, 
+               batch: dict, 
+               input_log1ped: bool = True, 
+               target_sum_normalized: bool = True) -> dict:
+        encoded_inputs = self.tokenizer.encode(batch["exprs"], 
+                                               self.gene_names, 
+                                               input_log1ped=input_log1ped, 
+                                               target_sum_normalized=target_sum_normalized)
         return {
             "input_ids": encoded_inputs["input_ids"],
             "attention_mask": encoded_inputs["attention_mask"],
