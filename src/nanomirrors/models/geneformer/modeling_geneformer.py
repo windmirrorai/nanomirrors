@@ -43,6 +43,6 @@ class GeneformerModel(nn.Module):
         model_path = hf_hub_download(repo_id="ctheodoris/Geneformer", 
                                      filename=f"{model_type}/model.safetensors")
         state_dict = load_file(model_path, device="cpu")
-        model.load_state_dict(state_dict, strict=False)
+        model.bert.load_state_dict(state_dict, strict=False)
 
         return model
