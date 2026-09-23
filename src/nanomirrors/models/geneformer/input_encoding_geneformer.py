@@ -137,7 +137,8 @@ class GeneformerTokenizer:
         }
 
     @classmethod
-    def from_pretrained(cls, model_type="Geneformer_V2"):
+    def from_pretrained(cls, model_name="Geneformer-V2-104M"):
+        model_type = "Geneformer_V2" if "V2" in model_name else "Geneformer_V1"
         if model_type == "Geneformer_V2":
             config = GeneformerTokenizerConfig()
             ensembl_mapping_file = "geneformer/ensembl_mapping_dict_gc104M.pkl"
@@ -190,9 +191,9 @@ class GeneformerInputEncoder:
         attention_mask:         [B, T]            attention mask, 1 for valid tokens, 0 for padding.
     """
 
-    def __init__(self, gene_names, tokenizer_type: str = "Geneformer_V2"):
+    def __init__(self, gene_names, model_name: str = "Geneformer_V2"):
         self.gene_names = gene_names
-        self.tokenizer = GeneformerTokenizer.from_pretrained(tokenizer_type)
+        self.tokenizer = GeneformerTokenizer.from_pretrained(model_name)
 
     def encode(self, 
                batch: dict, 
@@ -206,3 +207,7 @@ class GeneformerInputEncoder:
             "input_ids": encoded_inputs["input_ids"],
             "attention_mask": encoded_inputs["attention_mask"],
         }
+
+    @classmethod
+    def from_pretrained(cls, model_name: str, gene_names: list):
+        return cls(gene_names, model_name=model_name)
