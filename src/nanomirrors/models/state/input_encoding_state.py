@@ -44,7 +44,7 @@ class StateInputEncoder:
 
     STATE inputs:
         basal_exprs: [B, S, input_dim]
-        perts:       [B, S, pert_dim]
+        perts:       [B, pert_dim] # since each set shares the same perturbation across all cells.
         targets:     [B, S, input_dim]
     """
 
