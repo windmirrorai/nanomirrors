@@ -172,6 +172,7 @@ class StateModel(nn.Module):
         self.pert_encoder = StateMLP(config, config.pert_dim, config.n_encoder_layers)
         self.transformer_backbone = StateBidirectionalLlama(config)
         self.project_out = nn.Linear(config.hidden_dim, config.input_dim) # f_recon
+        self.relu = nn.ReLU()
 
         if config.use_batch_encoder:
             self.batch_encoder = nn.Embedding(config.n_batches, config.hidden_dim)
@@ -183,17 +184,17 @@ class StateModel(nn.Module):
                 perts: torch.Tensor, 
                 batch: torch.Tensor = None) -> torch.Tensor:
         B, S, D = basal_exprs.shape
-        h_cell = self.basal_encoder(basal_exprs.view(B * S, D)) # [B * S, hidden_dim]
+        h_cell = self.basal_encoder(basal_exprs) # [B, S, hidden_dim]
         h_pert = self.pert_encoder(perts) # [B, hidden_dim]
 
-        h = h_cell.view(B, S, -1) + h_pert[:, None, :]
+        h = h_cell + h_pert[:, None, :]
 
         if batch is not None and hasattr(self, "batch_encoder"):
             h_batch = self.batch_encoder(batch) # [B, hidden_dim]
             h = h + h_batch[:, None, :]
 
         z = self.transformer_backbone(h) # [B, S, D]
-        output = self.project_out((z + h).view(B * S, -1)).view(B, S, -1)
+        output = self.relu(self.project_out((z + h_cell)))
 
         if self.config.output_space == "embedding":
             gene_expr = self.gene_decoder(output)
