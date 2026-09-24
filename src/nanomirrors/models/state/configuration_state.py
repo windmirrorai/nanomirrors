@@ -1,37 +1,45 @@
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass
 class StateConfig:
-    model_type = "state"
+    model_type: str = "state"
 
+    # dataset-dependent feature dimensions
     input_dim: int | None = None
     output_dim: int | None = None
     pert_dim: int | None = None
-    embed_key: str = "X_hvg" # "X_hvg" | "emb" |
-    output_space: str = "gene" # "embedding" | "gene" | "all"
 
+    output_space: Literal["embedding", "gene", "all"] = "gene"
 
-    cell_set_size: int = 32
-    hidden_dim: int = 128
+    # Cell encoder, perturbation encoder, and output projection.
+    n_encoder_layers: int = 1
+    n_decoder_layers: int = 1
+    activation_fn: Literal["gelu", "relu", "silu"] = "gelu"
+    mlp_dropout: float = 0.0
 
-    n_encoder_layers: int = 4 # Cell / Perturbation encoders
-    n_decoder_layers: int = 4 # Output projection
-    activation_fn: str = "gelu"
-    dropout: float = 0.0
+    # LatentToGeneDecoder specific configuration.
+    latent_decoder_dropout: float = 0.1
+    latent_decoder_layernorm_eps: float = 1e-5
 
-    # Transformer
-    transformer_backbone: str = "gpt2" # "gpt2 | llama"
-    n_layer: int = 4
-    n_head: int = 8
-    n_embd: int = 128
-    n_inner: int = 512  # GPT2 FFN = 4 * hidden_dim
-    resid_pdrop: float = 0.0
-    embd_pdrop: float = 0.0
-    attn_pdrop: float = 0.0
+    cell_set_size: int = 64
+    hidden_dim: int = 768
 
-    batch_encoder: bool = False
+    transformer_backbone: Literal["llama", "gpt2"] = "llama"
+    n_transformer_layers: int = 8
+    n_attention_heads: int = 12
+    transformer_intermediate_dim: int = 3072 # 4 * hidden_dim
+    transformer_attention_dropout: float = 0.0
+    transformer_norm_eps: float = 1e-6 # LayerNorm epsilon for GPT2, RMSNorm for LLaMA.
 
-    predict_residual: bool = True # better naming
-    loss: str = "energy"
-    blur: float = 0.05
+    bidirectional_attention: bool = True
+    use_position_embeddings: bool = False
+
+    # Optional experimental batch conditioning.
+    use_batch_encoder: bool = False
+    n_batches: int | None = None
+
+    # Distribution matching objective.
+    loss: Literal["energy", "sinkhorn"] = "energy"
+    blur: float = 0.05  # Relevant to Sinkhorn loss;
