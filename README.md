@@ -77,7 +77,7 @@ config = StateConfig(input_dim=2000
 model = StateModel(config)
 
 trainer_config = StateTrainerConfig()
-trainer = StateTrainerForPerturbationResponsePrediction(model, train_data, config)
+trainer = StateTrainerForPerturbationResponsePrediction(model, train_data, trainer_config)
 trainer.train(checkpoint_path="./run")
 ```
 
@@ -86,8 +86,8 @@ trainer.train(checkpoint_path="./run")
 | Model | Paper | Inference | Train | Verified vs. original | Weights license |
 |---|---|:---:|:---:|---|---|
 | **scGPT** | [Cui et al., 2024](https://www.nature.com/articles/s41592-024-02201-0) | ✅ | ✅ (PRP) | Bitwise equivalent, 1.38× faster | Inherits [scGPT license](https://github.com/bowang-lab/scGPT) |
-| **Geneformer** | [Theodoris et al., 2023](https://www.nature.com/articles/s41586-023-06139-9) | ✅ | ✅ (PRP) | TODO | Inherits [Geneformer license](https://huggingface.co/ctheodoris/Geneformer) |
-| **State** | [Adduri et al., 2025](https://www.cell.com/cell/fulltext/S0092-8674(26)00921-9) | ✅ | ✅ (PRP) | TODO | Inherits [State license](https://github.com/ArcInstitute/state) |
+| **Geneformer** | [Theodoris et al., 2023](https://www.nature.com/articles/s41586-023-06139-9) | ✅ | ✅ (PRP) | Bitwise equivalent | Inherits [Geneformer license](https://huggingface.co/ctheodoris/Geneformer) |
+| **State** | [Adduri et al., 2025](https://www.cell.com/cell/fulltext/S0092-8674(26)00921-9) | ✅ | ✅ (PRP) | Bitwise equivalent | Inherits [State license](https://github.com/ArcInstitute/state) |
 
 Want a model added? [Open an issue](../../issues).
 
