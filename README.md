@@ -5,6 +5,10 @@
 <h3 align="center">nanomirrors</h3>
 <h3 align="center">Minimal, readable, production-ready SOTA bio cell models</h3>
 
+> [!NOTE]
+> **🚧 nanomirrors is in beta, with the public launch coming soon.** APIs may change slightly and some features are still landing.
+> Try it out and tell us what breaks: [open an issue](https://github.com/windmirrorai/nanomirrors/issues) and ⭐ the repo to follow along.
+
 <!-- <p align="center">
   <a href="https://pypi.org/project/nanomirrors/"><img src="https://img.shields.io/pypi/v/nanomirrors.svg" alt="PyPI"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
@@ -16,14 +20,14 @@
 
 **nanomirrors** gives you clean PyTorch implementations of state-of-the-art bio cell models behind one unified API and framework. Run inference, fine-tune, and train in ~10 lines of code.
 
-AIxBio models have great potential, but their reference code is often hard to read, hard to use, and to build on top of. nanomirrors reimplements each model from scratch. Every implementation is small enough to read in one sitting and verified numerically against the original.
+Nanomirrors reimplements each model from scratch. Every implementation is small enough to read in one sitting and verified numerically against the original.
 
 ## Why nanomirrors
 
-- **One API, many models.** Swap scGPT for Geneformer or State by changing one string.
-- **Readable.** Each model is a single, self-contained file of a few hundred lines. No framework magic.
-- **Faithful.** Implementations are tested for numerical equivalence against the official code.
-- **Tinkerable.** Want to test a new architecture, objective, or tokenization scheme?  Change a few lines and train. No configs or plugin system to learn.
+- **One API, many models.** Swap `scGPT` for `Geneformer`, `State` and more (soon) by changing one string.
+- **Readable.** Each model is a single, self-contained file of a few hundred lines. No need to jump between twenty open tabs.
+- **Faithful.** Implementations are tested for numerical equivalence against the official code and in reference to the paper.
+- **Quickly iterate.** Want to test a new architecture, objective, or tokenization scheme?  Change a few lines and find out.
 
 ## Install
 
@@ -47,18 +51,19 @@ pip install -e .
 ```python
 # scGPT cell embedding  example
 import numpy as np
-from nanomirrors.auto import AutoModel, AutoConfig, AutoInputEncoder
-from nanomirrors.data.utils import convert_ensembl_to_symbol, convert_symbol_to_ensembl
+from nanomirrors.auto import AutoModel, AutoInputEncoder
 
-genes = ['DUX4L30', 'CTB-52I2.4', 'USP17L16P', 'RPL7P23']
-exprs = np.array([[1.0, 0.0, 23.0, 6.0], [0.0, 0.0, 3.0, 7.0]])
+genes = ['DUX4L30', 'USP17L16P', 'RPL7P23', 'ZZZ3', 'ZSCAN9', 'VN1R104P']
+exprs = np.array([[1.0, 0.0, 23.0, 6.0, 5.0, 4.0], [0.0, 0.0, 3.0, 7.0, 2.0, 1.0]])
 
-model_name = "Geneformer-V2-104M" # or "Geneformer-V2-104M", "Geneformer-V1-10M"
+model_name = "scGPT_human" # or "Geneformer-V2-104M", "Geneformer-V1-10M"
 
 model = AutoModel.from_pretrained(model_name)
 model.eval()
+
 input_encoder = AutoInputEncoder.from_pretrained(model_name, gene_names=genes)
 inputs = input_encoder.encode({"exprs": exprs})
+
 embeddings = model.encode_cell(**inputs)
 
 ```
