@@ -5,11 +5,10 @@ import torch
 import scanpy as sc
 
 from nanomirrors.data import CellDataset
-from nanomirrors.auto import AutoModel, AutoConfig, AutoInputEncoder
+from nanomirrors.auto import AutoModel, AutoInputEncoder
 from nanomirrors.data.utils import convert_ensembl_to_symbol, convert_symbol_to_ensembl
 
 DEFAULT_INPUT_URL = "https://datasets.cellxgene.cziscience.com/d6761a21-e226-434f-9370-fbcc7e549aa0.h5ad"
-#DEFAULT_INPUT_URL = "https://drive.usercontent.google.com/download?id=10WC3WMmgZkZ_6LE9Eg7EOAOuC7q_1jeW&export=download&confirm=t"
 
 MODEL_CHOICES = ["scGPT_human",
                  "StateTransition",
@@ -102,12 +101,12 @@ if __name__ == "__main__":
                                                      gene_names=adata.var[gene_format].tolist())
     inputs = input_encoder.encode(batch)
 
-    max_T = 120
-    # inputs["input_ids"] = inputs["input_ids"][:, :max_T]
-    # inputs["attention_mask"] = inputs["attention_mask"][:, :max_T]
-    inputs["gene_tokens"] = inputs["gene_tokens"][:, :max_T]
-    inputs["exprs"] = inputs["exprs"][:, :max_T]
-    inputs["padding_mask"] = inputs["padding_mask"][:, :max_T]
+    # max_T = 120
+    # # inputs["input_ids"] = inputs["input_ids"][:, :max_T]
+    # # inputs["attention_mask"] = inputs["attention_mask"][:, :max_T]
+    # inputs["gene_tokens"] = inputs["gene_tokens"][:, :max_T]
+    # inputs["exprs"] = inputs["exprs"][:, :max_T]
+    # inputs["padding_mask"] = inputs["padding_mask"][:, :max_T]
 
     for key, value in inputs.items():
         if isinstance(value, torch.Tensor):
