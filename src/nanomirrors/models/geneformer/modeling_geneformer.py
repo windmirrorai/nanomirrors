@@ -27,7 +27,24 @@ class GeneformerModel(nn.Module):
             output_attentions=False
         )
 
-    def encode(self, input_ids, attention_mask=None, embedding_layer=-2) -> torch.Tensor:
+    def encode_cell(self, 
+                    input_ids, 
+                    attention_mask=None,
+                    embedding_layer=-2,
+                    pooling = "mean") -> torch.Tensor:
+        outputs = self.forward(input_ids, attention_mask)
+        h = outputs.hidden_states[embedding_layer] # default uses 2nd-to-last layer.
+
+        if pooling == "mean":
+            h = h.mean(dim=1) # [B, H]
+        elif pooling == "max":
+            h = h.max(dim=1).values # [B, H]
+        else:
+            raise ValueError(f"Unsupported pooling type: {pooling}")
+
+        return h # [B, H]
+
+    def encode_gene(self, input_ids, attention_mask=None, embedding_layer=-2) -> torch.Tensor:
         outputs = self.forward(input_ids, attention_mask)
         h = outputs.hidden_states[embedding_layer] # default uses 2nd-to-last layer.
 
@@ -46,3 +63,36 @@ class GeneformerModel(nn.Module):
         model.bert.load_state_dict(state_dict, strict=False)
 
         return model
+
+class GeneformerForPerturbationResponsePrediction(nn.Module):
+    def __init__(self, 
+                 config: GeneformerConfig,
+                 n_genes: int,
+                 head_dropout: float = 0.1):
+        super().__init__()
+
+        self.config = config
+        self.n_genes = n_genes
+
+        self.geneformer = GeneformerModel(config)
+        self.delta_head = nn.Sequential(
+            nn.Linear(2 * config.hidden_size, config.hidden_size),
+            nn.GELU(),
+            nn.Dropout(head_dropout),
+            nn.Linear(config.hidden_size, config.hidden_size),
+        )
+        self.output_head = nn.Linear(config.hidden_size, self.n_genes)
+
+    def forward(self, 
+                ctrl_input_ids,
+                ctrl_attention_mask=None,
+                edited_input_ids=None,
+                edited_attention_mask=None):
+        ctrl_embeddings = self.geneformer.encode_cell(ctrl_input_ids, ctrl_attention_mask) # [B, H]
+        edited_embeddings = self.geneformer.encode_cell(edited_input_ids, edited_attention_mask) # [B, H]
+
+        delta_embeddings = torch.cat([ctrl_embeddings, edited_embeddings], dim=-1)
+        delta_hidden = self.delta_head(delta_embeddings) # [B, H]
+        output = self.output_head(delta_hidden + ctrl_embeddings) # [B, n_genes]
+
+        return output

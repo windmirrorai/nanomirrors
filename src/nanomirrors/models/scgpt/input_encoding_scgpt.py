@@ -4,7 +4,6 @@ from typing import List, Dict
 import json
 import numpy as np
 import torch
-from torch.utils.data import Dataset
 from huggingface_hub import hf_hub_download
 
 @dataclass
@@ -153,31 +152,91 @@ class scGPTTokenizer:
         
         return cls(vocab, config)
 
-
 class scGPTInputEncoder:
+    """
+    Encode a generic cell batch into scGPT model inputs.
+    
+    Generic batch:
+        exprs:                   [B, G]          cell gene expressions, prenormalized
+        
+    Output:
+        gene_tokens:             [B, T]            tokenized gene tokens corresponding to columns in exprs
+        exprs:                   [B, T]            processed gene expression values
+        padding_mask:            [B, T]            sr_key_padding_mask, 1 to ignore (padding), 0 for valid tokens.
+    """
+
+    def __init__(self,
+                 gene_names: List[str], 
+                 model_name="scGPT_human", 
+                 perturbations_separator="+",
+                 truncate_to_max_length=False):
+        self.tokenizer = scGPTTokenizer.from_pretrained(model_name)
+        self.gene_names = gene_names
+        self.T = self.tokenizer.max_length
+        self.perturbations_separator = perturbations_separator
+        self.truncate_to_max_length = truncate_to_max_length
+
+        # fixed gene set for all cells.
+        self.gene_ids = np.array([
+            self.tokenizer.vocab.get(g, self.tokenizer.vocab.get("<pad>"))   # OOV → <pad> token id
+            for g in self.gene_names
+        ])
+
+        self.unknowns = [g for g in self.gene_names if g not in self.tokenizer.vocab]
+
+    def encode(self, batch: dict) -> dict:
+        gene_values = batch["exprs"]
+
+        if not isinstance(gene_values, torch.Tensor):
+            gene_values = torch.tensor(gene_values, dtype=torch.float32)
+        
+        B, n_genes = gene_values.shape
+
+        if self.truncate_to_max_length and n_genes > self.T:
+            idx = torch.randperm(n_genes)[:self.T]
+
+            gene_values   = gene_values[:, idx]
+            gene_ids      = torch.from_numpy(self.gene_ids[idx]).long().unsqueeze(0).repeat(B, 1)
+        else:
+            gene_ids      = torch.from_numpy(self.gene_ids).long().unsqueeze(0).repeat(B, 1)
+
+        # all-False padding mask
+        src_key_padding_mask = torch.zeros_like(gene_values, dtype=torch.bool)
+
+        return {
+            "gene_tokens":    gene_ids,
+            "exprs":          gene_values,
+            "padding_mask":   src_key_padding_mask,
+        }
+
+    @classmethod
+    def from_pretrained(cls, model_name: str, gene_names: list):
+        return cls(gene_names=gene_names, model_name=model_name)
+
+class scGPTInputEncoderForPerturbation:
     """
     Encode a generic perturbation batch into scGPT model inputs.
 
-    Generic batch:
-        exprs:             [B, G]
-        ctrl_exprs:        [B, n_ctrl, G]
-        perturbations:     list[str], len B
-        is_ctrl:           bool [B]
+    batch:
+        - ``exprs``: Target expression, shape ``(B, 1, n_genes)``.
+        - ``ctrl_exprs``: Control expressions, shape ``(B, n_ctrl, n_genes)``.
+        - ``perturbations``: List of perturbation names of length ``B``.
+        - ``is_ctrl``: boolean array of length ``B`` indicating whether each target cell is a control.
 
     scGPT inputs:
-        gene_ids:               [B, G]
-        gene_values:            [B, G]
-        src_key_padding_mask:   [B, G]
-        pert_labels:            [B, G]
+        gene_tokens:      [B, G]
+        exprs:            [B, G]
+        padding_mask:     [B, G]
+        pert_labels:      [B, G]
     """
 
     def __init__(self, 
                  gene_names: List[str], 
-                 tokenizer_type="scGPT_human", 
+                 model_name="scGPT_human", 
                  perturbations_separator="+",
                  truncate_to_max_length=False,
                  keep_per_cell=True):
-        self.tokenizer = scGPTTokenizer.from_pretrained(tokenizer_type)
+        self.tokenizer = scGPTTokenizer.from_pretrained(model_name)
         self.gene_names = gene_names
         self.T = self.tokenizer.max_length
         self.perturbations_separator = perturbations_separator
@@ -189,15 +248,25 @@ class scGPTInputEncoder:
             self.tokenizer.vocab.get(g, self.tokenizer.vocab.get("<pad>"))   # OOV → <pad> token id
             for g in self.gene_names
         ])
+        
+        # unknown genes not covered by the tokenizer vocabulary
+        self.unknown_genes = [g for g in self.gene_names if g not in self.tokenizer.vocab]
 
-    def encode(self, batch: dict) -> dict:
-        import pdb; pdb.set_trace()
+        # uncovered perturbations for the all batch encoded
+        # for scGPT, uncovered_perts include both 1) pert not in vocab and 2) pert not in the gene_names
+        self.uncovered_perts = []
+
+    def encode(self, batch: dict) -> dict:        
         pert_names = [p.split(self.perturbations_separator) for p in batch["perturbations"]]
-        pert_labels = [np.isin(self.gene_names, ps).astype(np.int64) for ps in pert_names]
+        pert_labels = torch.tensor([np.isin(self.gene_names, ps).tolist() for ps in pert_names]).long()
 
-        target_values = batch["exprs"]
+        for ps in pert_names:
+            self.uncovered_perts.extend([p for p in ps if p not in self.tokenizer.vocab and p not in self.gene_names])
+
+        target_values = batch["exprs"].squeeze(axis=1)
         gene_values = batch["ctrl_exprs"]
         B, n_ctrl, n_genes = gene_values.shape
+        assert n_ctrl == 1, "Currently only supports n_ctrl == 1."
 
         # sample gene subset ONCE for the whole batch, only for train. for val/test, full gene sets are returned.
         # ![NOTE]: In the og scGPT tutorial, random sampling is performed and it means perturbed genes may get dropped with probability ((n_genes-max_length)/n_genes), 
@@ -239,10 +308,10 @@ class scGPTInputEncoder:
         src_key_padding_mask = torch.zeros_like(gene_values, dtype=torch.bool) # (B, n_ctrl, T)
 
         return {
-            "gene_ids":             gene_ids,
-            "gene_values":          gene_values,
-            "src_key_padding_mask": src_key_padding_mask,
+            "gene_tokens":          gene_ids,
+            "exprs":                gene_values.squeeze(1),
+            "padding_mask": src_key_padding_mask.squeeze(1),
             "pert_labels":          pert_labels,
-            "target_values":        target_values,
+            "targets":              target_values,
             "perturbations":        batch["perturbations"],
         }

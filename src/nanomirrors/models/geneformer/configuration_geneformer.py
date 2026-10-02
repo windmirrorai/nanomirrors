@@ -6,6 +6,7 @@ from transformers import BertConfig
 @dataclass
 class GeneformerConfig:
     model_type: str = "geneformer"
+    model_name: str = "geneformer-v2-104m"
 
     max_position_embeddings: int = 4096
     vocab_size: int = 20275
@@ -30,6 +31,7 @@ class GeneformerConfig:
     def from_pretrained(cls, name: str):
         configs = {
             "geneformer-v1-10m": dict(
+                model_name="geneformer-v1-10m",
                 max_position_embeddings=2048,
                 vocab_size=25426,
                 hidden_size=256,
@@ -40,6 +42,7 @@ class GeneformerConfig:
                 attention_probs_dropout_prob=0.02,
             ),
             "geneformer-v2-104m": dict(
+                model_name="geneformer-v2-104m",
                 max_position_embeddings=4096,
                 vocab_size=20275,
                 hidden_size=768,
@@ -50,6 +53,7 @@ class GeneformerConfig:
                 attention_probs_dropout_prob=0.1,
             ),
             "geneformer-v2-316m": dict(
+                model_name="geneformer-v2-316m",
                 max_position_embeddings=4096,
                 vocab_size=20275,
                 hidden_size=1152,

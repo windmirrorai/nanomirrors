@@ -9,7 +9,7 @@ class StateConfig:
     # dataset-dependent feature dimensions
     input_dim: int | None = None
     output_dim: int | None = None
-    pert_dim: int | None = None
+    pert_dim: int | None = None # num of perturbastions if multihot embedding, 5120 if using ESM2 embeddings
 
     output_space: Literal["embedding", "gene", "all"] = "gene"
 
@@ -23,7 +23,7 @@ class StateConfig:
     latent_decoder_dropout: float = 0.1
     latent_decoder_layernorm_eps: float = 1e-5
 
-    cell_set_size: int = 64
+    cell_set_size: int = 4
     hidden_dim: int = 768
 
     transformer_backbone: Literal["llama", "gpt2"] = "llama"

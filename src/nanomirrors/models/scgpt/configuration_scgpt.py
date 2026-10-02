@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class scGPTConfig:
     model_type = "scGPT"
+    model_name: str = "scGPT_human"
 
     vocab_size: int = 60697 # NOTE: humans, mice might have different vocab. 60694 genes + 3 special tokens (<cls>, <pad>, <eoc>) for human scGPT.
     n_positions: int = 1200

@@ -1,13 +1,4 @@
-#
-# data = perturb_datasets.load_dataset('arc_replogle_nadig')
-# train_data, val_data, test_data = perturb_datasets.split_dataset(data)
-# dataset = perturb_datasets.PairedSetPerturbationDataset(data, ...)
-# batch = next(iter(dataset))
-# inputs = {model}InputEncoder.encode(batch)
-# outputs = model(**inputs)
-#
-
-from typing import List
+from typing import Dict, List
 
 import torch
 
@@ -32,13 +23,13 @@ def _create_multi_hot(num_classes: int, indices: List[list]) -> torch.Tensor:
 
     return multi_hot
 
-class StateInputEncoder:
+class StateInputEncoderForPerturbation:
     """
-    Encode a generic perturbation batch into STATE model inputs.
+    Encode a generic set perturbation batch into STATE model inputs.
 
     Generic batch:
-        exprs:             [B, S, G]
-        ctrl_exprs:        [B, S, G]
+        exprs:             [B, S, G], assuming target_sum and log1p normalized.
+        ctrl_exprs:        [B, S, G], assuming target_sum and log1p normalized.
         perturbations:     list[str], len B
         other_covariates:  dict[str, list]
 
@@ -50,16 +41,32 @@ class StateInputEncoder:
 
     def __init__(
         self,
-        perturbation_vocab: list[str],
+        perturbation_vocab: list[str] | None,
+        perturbation_features: Dict[str, torch.Tensor] | None,
+        use_multi_hot: bool = True, 
+        use_pert_features: bool = False,
         input_key: str = "ctrl_exprs",
         target_key: str = "exprs",
         pert_key: str = "perturbations",
         other_covariates_key: str = "other_covariates",
         perturbations_separator: str = "+",
     ):
-        self.perturbation2idx = {pert: i for i, pert in enumerate(perturbation_vocab)}
+        if perturbation_vocab is None and perturbation_features is None:
+            raise ValueError("Either perturbation_vocab or perturbation_features must be provided.")
+        if use_multi_hot and perturbation_vocab is None:
+            raise ValueError("perturbation_vocab must be provided if use_multi_hot is True.")
+        if use_pert_features and perturbation_features is None:
+            raise ValueError("perturbation_features must be provided if use_pert_features is True.")
+        
+        self.use_multi_hot = use_multi_hot
+        self.use_pert_features = use_pert_features
 
-        self.perturbation_vocab = perturbation_vocab
+        if use_multi_hot:
+            self.perturbation2idx = {pert: i for i, pert in enumerate(perturbation_vocab)}
+            self.perturbation_vocab = perturbation_vocab
+        if use_pert_features:
+            self.perturbation_features = perturbation_features
+        
         self.input_key = input_key
         self.target_key = target_key
         self.pert_key = pert_key
@@ -71,12 +78,26 @@ class StateInputEncoder:
         B, S, _ = basal_exprs.shape
 
         # perturbation label -> multi-hot
-        perts_list = [pert.split(self.perturbations_separator) for pert in batch[self.pert_key]]
-        perts_indices = [[self.perturbation2idx[p] for p in pert_list] for pert_list in perts_list]
-        perts = _create_multi_hot(
-            num_classes=len(self.perturbation_vocab),
-            indices=perts_indices,
-        )            
+        if self.use_multi_hot:
+            perts_list = [pert.split(self.perturbations_separator) for pert in batch[self.pert_key]]
+            perts_indices = [[self.perturbation2idx[p] for p in pert_list] for pert_list in perts_list]
+            perts = _create_multi_hot(
+                num_classes=len(self.perturbation_vocab),
+                indices=perts_indices,
+            )
+        # perturbation label -> perturbation features using pretrained embeddings
+        elif self.use_pert_features:
+            perts_list = [pert.split(self.perturbations_separator) for pert in batch[self.pert_key]]
+            merged_perts_list = []
+            for ps in perts_list:
+                if len(ps) > 1:
+                    merged_perts = torch.stack([self.perturbation_features[p] for p in ps])
+                    merged_perts = torch.mean(merged_perts, dim=0, keepdim=True)
+                else:
+                    merged_perts = self.perturbation_features[ps[0]].view(1, -1)
+                merged_perts_list.append(merged_perts)
+            perts = torch.cat(merged_perts_list, dim=0) # [B, pert_dim]
+
         
         inputs = {
             "basal_exprs": basal_exprs,

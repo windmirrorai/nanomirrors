@@ -42,6 +42,8 @@ _TASK_INPUT_ENCODERS = {
         "state": "StateInputEncoder",
     },
     "perturbation_response_prediction": {
+        "scgpt": "scGPTInputEncoderForPerturbation",
+        "geneformer": "GeneformerInputEncoderForPerturbation",
     },
 }
 

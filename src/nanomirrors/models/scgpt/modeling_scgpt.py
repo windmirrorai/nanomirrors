@@ -164,13 +164,13 @@ class scGPTModel(nn.Module):
         return n_params
     
     def forward(self, 
-                gene_ids: torch.Tensor, 
-                gene_values: torch.Tensor, 
-                src_key_padding_mask: torch.BoolTensor | None = None,
+                gene_tokens: torch.Tensor, 
+                exprs: torch.Tensor, 
+                padding_mask: torch.BoolTensor | None = None,
                 pert_labels: torch.Tensor | None = None,
                 batch_labels: torch.Tensor | None = None) -> torch.Tensor:
-        gene_embds = self.encoder(gene_ids)
-        value_embds = self.value_encoder(gene_values)
+        gene_embds = self.encoder(gene_tokens)
+        value_embds = self.value_encoder(exprs)
         if self.config.input_embd == "continuous":
             input_embds = gene_embds + value_embds
             
@@ -183,21 +183,30 @@ class scGPTModel(nn.Module):
                         f"All published scGPT checkpoints use 'continuous'."
                     )
         
-        h = input_embds
+        h = input_embds # [B, T, n_embd]
         for layer in self.transformer_encoder.layers:
-            h = layer(h, src_key_padding_mask) # [B, T, n_embd]
+            h = layer(h, padding_mask) # [B, T, n_embd]
         
         return h
     
-    def encode(self, 
-              gene_ids: torch.Tensor, 
-              gene_values: torch.Tensor, 
-              src_key_padding_mask: torch.BoolTensor | None = None, 
-              batch_labels: torch.Tensor | None = None) -> torch.Tensor:
-        h = self.forward(gene_ids, gene_values, src_key_padding_mask, batch_labels) # [B, T, n_embd]
+    def encode_cell(self, 
+                    gene_tokens: torch.Tensor, 
+                    exprs: torch.Tensor, 
+                    padding_mask: torch.BoolTensor | None = None, 
+                    batch_labels: torch.Tensor | None = None) -> torch.Tensor:
+        h = self.forward(gene_tokens, exprs, padding_mask, batch_labels) # [B, T, n_embd]
         cls_embd = h[:, 0, :]
         
         return cls_embd
+
+    def encode_gene(self, 
+                    gene_tokens: torch.Tensor, 
+                    exprs: torch.Tensor, 
+                    padding_mask: torch.BoolTensor | None = None, 
+                    batch_labels: torch.Tensor | None = None) -> torch.Tensor:
+        h = self.forward(gene_tokens, exprs, padding_mask, batch_labels) # [B, T, n_embd]
+        
+        return h
     
     @classmethod
     def from_pretrained(cls, model_type="scGPT_human"):
@@ -216,17 +225,18 @@ class scGPTForPerturbationResponsePrediction(nn.Module):
 
     def __init__(self, config):
         super().__init__()
+        self.config = config
         self.scgpt = scGPTModel(config)
         self.decoder = AffineExprDecoder(config.n_embd)
 
     def forward(self, 
-                gene_ids: torch.Tensor, 
-                gene_values: torch.Tensor, 
-                src_key_padding_mask: torch.BoolTensor | None = None,
+                gene_tokens: torch.Tensor, 
+                exprs: torch.Tensor, 
+                padding_mask: torch.BoolTensor | None = None,
                 pert_labels: torch.Tensor | None = None,
                 batch_labels: torch.Tensor | None = None) -> torch.Tensor:
-        h = self.scgpt(gene_ids, gene_values, src_key_padding_mask, pert_labels) # [B, T, n_embd]
-        pred = self.decoder(h, gene_values).squeeze(-1) # [B, T]
+        h = self.scgpt(gene_tokens, exprs, padding_mask, pert_labels) # [B, T, n_embd]
+        pred = self.decoder(h, exprs).squeeze(-1) # [B, T]
         
         return pred
     

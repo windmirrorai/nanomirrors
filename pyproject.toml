@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "geomloss>=0.3.1",
+    "mygene>=3.2.2",
     "torch>=2.14.0",
     "transformers>=5.17.0",
 ]
