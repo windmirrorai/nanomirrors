@@ -122,7 +122,7 @@ Reimplementations are only useful if you can trust them. For every model we:
 
 ## Licensing
 
-The nanomirrors **code** is released under the [Apache 2.0](./LICENSE).
+The nanomirrors code is released under the [Apache 2.0](./LICENSE).
 
 Each wrapped model's **pretrained weights and model-specific terms** inherit the license of the original model. Check the table above before using a model commercially.
 
