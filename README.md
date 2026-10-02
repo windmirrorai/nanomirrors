@@ -18,7 +18,7 @@
 
 ---
 
-**nanomirrors** gives you clean PyTorch implementations of state-of-the-art bio cell models behind one unified API and framework. Run inference, fine-tune, and train in ~10 lines of code.
+**Nanomirrors** gives you clean PyTorch implementations of state-of-the-art bio cell models behind **one unified API and framework**. Run inference, fine-tune, and train in ~10 lines of code.
 
 Nanomirrors reimplements each model from scratch. Every implementation is small enough to read in one sitting and verified numerically against the original.
 
@@ -27,7 +27,7 @@ Nanomirrors reimplements each model from scratch. Every implementation is small 
 - **One API, many models.** Swap `scGPT` for `Geneformer`, `State` and more (soon) by changing one string.
 - **Readable.** Each model is a single, self-contained file of a few hundred lines. No need to jump between twenty open tabs.
 - **Faithful.** Implementations are tested for numerical equivalence against the official code and in reference to the paper.
-- **Quickly iterate.** Want to test a new architecture, objective, or tokenization scheme?  Change a few lines and find out.
+- **Iterate quickly.** Want to test a new architecture, objective, or input encoding?  Change a few lines and find out.
 
 ## Install
 
@@ -46,7 +46,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-## Quick Start (beta test)
+## Quick Start
 
 ```python
 # scGPT cell embedding  example
