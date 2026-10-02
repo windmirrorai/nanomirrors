@@ -116,8 +116,6 @@ class GeneformerTrainerForPerturbationResponsePrediction:
                 edited_attention_mask = encoded_batch["edited_attention_mask"]
             ) # [B, T]
 
-            # import pdb; pdb.set_trace()
-
             loss = self.loss_func(outputs, encoded_batch["targets"])
 
         self.scaler.scale(loss).backward()

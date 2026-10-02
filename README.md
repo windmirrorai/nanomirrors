@@ -85,9 +85,9 @@ trainer.train(checkpoint_path="./run")
 
 | Model | Paper | Inference | Train | Verified vs. original | Weights license |
 |---|---|:---:|:---:|---|---|
-| **scGPT** | [Cui et al., 2024](https://www.nature.com/articles/s41592-024-02201-0) | ✅ | ✅ (PRP) | Bitwise equivalent, 1.38× faster | Inherits [scGPT license](https://github.com/bowang-lab/scGPT) |
-| **Geneformer** | [Theodoris et al., 2023](https://www.nature.com/articles/s41586-023-06139-9) | ✅ | ✅ (PRP) | Bitwise equivalent | Inherits [Geneformer license](https://huggingface.co/ctheodoris/Geneformer) |
-| **State** | [Adduri et al., 2025](https://www.cell.com/cell/fulltext/S0092-8674(26)00921-9) | ✅ | ✅ (PRP) | Bitwise equivalent | Inherits [State license](https://github.com/ArcInstitute/state) |
+| **scGPT** | [Cui et al., 2024](https://www.nature.com/articles/s41592-024-02201-0) | ✅ | ✅ (PRP) | equivalent, 1.38× faster | Inherits [scGPT license](https://github.com/bowang-lab/scGPT) |
+| **Geneformer** | [Theodoris et al., 2023](https://www.nature.com/articles/s41586-023-06139-9) | ✅ | ✅ (PRP) | equivalent | Inherits [Geneformer license](https://huggingface.co/ctheodoris/Geneformer) |
+| **State** | [Adduri et al., 2025](https://www.cell.com/cell/fulltext/S0092-8674(26)00921-9) | ✅ | ✅ (PRP) | equivalent | Inherits [State license](https://github.com/ArcInstitute/state) |
 
 Want a model added? [Open an issue](../../issues).
 
@@ -118,7 +118,7 @@ nanomirrors/
 Reimplementations are only useful if you can trust them. For every model we:
 
 1. Load the official checkpoint into both the reference code and the nanomirrors version.
-2. Compare outputs on fixed inputs.
+2. Compare outputs on fixed inputs. Equivalence is checked with `torch.allclose(ours, ref, atol=1e-3)`
 
 ## Licensing
 

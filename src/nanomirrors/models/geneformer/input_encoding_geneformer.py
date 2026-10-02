@@ -286,10 +286,7 @@ class GeneformerTokenizer:
             # Rewrite the row; deletion leaves additional padding.
             length = len(input_genes)
             if length > edited_input_ids.shape[1]:
-                print(f"!!!Edited sequence length {length} exceeds allocated length {edited_input_ids.shape[1]}")
-                import pdb; pdb.set_trace()
-
-                # raise ValueError(f"Edited sequence exceeds allocated length with length {length} and allocated length {edited_input_ids.shape[1]}")
+                raise ValueError(f"Edited sequence exceeds allocated length with length {length} and allocated length {edited_input_ids.shape[1]}")
 
             edited_input_ids[idx].fill_(self.pad_token_id)
             edited_attention_mask[idx].zero_()
