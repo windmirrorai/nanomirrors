@@ -6,5 +6,6 @@ src/nanomirrors/data/*__pycache__/
 src/nanomirrors/auto/*__pycache__/
 src/nanomirrors.egg-info/*
 src/nanomirrors/*__pycache__/
+src/nanomirrors/evaluation/*__pycache__/
 
 downloaded_data/

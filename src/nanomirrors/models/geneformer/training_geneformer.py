@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Optional, Tuple
 from dataclasses import field
 from tqdm import tqdm
 from pathlib import Path
@@ -148,6 +148,29 @@ class GeneformerTrainerForPerturbationResponsePrediction:
             loss = self.loss_func(outputs, encoded_batch["targets"])
 
         return loss.detach().item()
+
+    @torch.inference_mode()
+    def test_step(self, batch, input_encoder, debug: bool = False) -> Tuple[float, torch.Tensor, torch.Tensor]:
+        self.model.eval()
+    
+        encoded_batch = input_encoder.encode(batch)
+        encoded_batch = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in encoded_batch.items()
+        }
+        with torch.amp.autocast(
+            device_type=self.device.type, 
+            dtype=self.amp_dtype,
+            enabled=self.amp):
+            outputs = self.model(
+                ctrl_input_ids = encoded_batch["ctrl_input_ids"],
+                ctrl_attention_mask = encoded_batch["ctrl_attention_mask"],
+                edited_input_ids = encoded_batch["edited_input_ids"],
+                edited_attention_mask = encoded_batch["edited_attention_mask"],
+            )
+            loss = self.loss_func(outputs, encoded_batch["targets"])
+        
+        return loss.detach().item(), outputs, encoded_batch["targets"]
 
     def train(self, checkpoint_path: Optional[str] = None):
         history = []

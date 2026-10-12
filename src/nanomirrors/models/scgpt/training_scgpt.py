@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Optional, Tuple
 from tqdm import tqdm
 from pathlib import Path
 import warnings
@@ -33,28 +33,31 @@ class scGPTTrainerForPerturbationResponsePrediction:
                  train_data: ad.AnnData,
                  val_data: ad.AnnData | None,
                  config: scGPTTrainerConfig,
-                 device: torch.device):
+                 device: torch.device,
+                 pair_covariates: list[str] | None = None):
         self.model = model
         self.train_data = train_data
         self.val_data = val_data
         self.config = config
         self.device = device
+        self.pair_covariates = pair_covariates
         
         # Initialize the model-task specific dataset, dataloaders.
-        self.train_dataset = PairedPerturbationDataset(train_data)
+        self.train_dataset = PairedPerturbationDataset(train_data, pair_covariates=pair_covariates)
         self.train_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True)
 
         batch = next(iter(self.train_loader))
         print(batch)
         
         if val_data is not None:
-            self.val_dataset = PairedPerturbationDataset(val_data)
+            self.val_dataset = PairedPerturbationDataset(val_data, pair_covariates=pair_covariates)
             self.val_loader = DataLoader(self.val_dataset, batch_size=self.config.batch_size, shuffle=False)
         
         # Initialize the input encoder.
         self.input_encoder = scGPTInputEncoderForPerturbation(
             gene_names = train_data.var['gene_symbol'].tolist(),
-            model_name = model.config.model_name
+            model_name = model.config.model_name,
+            truncate_to_max_length=True,
         )
         
         self.loss_fn = nn.MSELoss(reduction="mean")
@@ -83,15 +86,14 @@ class scGPTTrainerForPerturbationResponsePrediction:
             ),
         ) # Only use scaler if AMP is enabled and using float16 on CUDA since bf16 does not require it
 
-        self.global_step = 0
-        
+        self.global_step = 0     
         
     def loss_func(self, outputs, targets):
         loss = self.loss_fn(outputs, targets) # [B, T] -> [B] -> scalar
 
         return loss
     
-    def train_step(self, batch, debug=False):
+    def train_step(self, batch, debug=False) -> float:
         self.model.train()
         self.optimizer.zero_grad()
 
@@ -141,10 +143,11 @@ class scGPTTrainerForPerturbationResponsePrediction:
 
         if debug:
             print(f"Step {self.global_step} | Loss: {loss.item():.4f} | LR: {self.scheduler.get_last_lr()[0]:.4f} | Scaler: {self.scaler.get_scale()} | Norm: {norm:.4f}")
+        
         return loss.detach().item()
 
     @torch.no_grad
-    def val_step(self, batch, debug: bool = False):
+    def val_step(self, batch, debug: bool = False) -> float:
         self.model.eval()
 
         encoded_batch = self.input_encoder.encode(batch)
@@ -170,6 +173,34 @@ class scGPTTrainerForPerturbationResponsePrediction:
             print(f"Validation | Loss: {loss.item():.4f}")
 
         return loss.detach().item()
+
+    @torch.inference_mode()
+    def test_step(self, batch, input_encoder, debug: bool = False) -> Tuple[float, torch.Tensor]:
+        self.model.eval()
+
+        encoded_batch = input_encoder.encode(batch)
+        encoded_batch = {
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in encoded_batch.items()
+        }
+
+        with torch.amp.autocast(
+            device_type=self.device.type, 
+            dtype=self.amp_dtype,
+            enabled=self.amp):
+            outputs = self.model(
+                gene_tokens = encoded_batch["gene_tokens"],
+                exprs = encoded_batch["exprs"],
+                padding_mask = encoded_batch["padding_mask"],
+                pert_labels = encoded_batch["pert_labels"],
+            )
+            valid = ~encoded_batch["padding_mask"]
+            loss = self.loss_func(outputs[valid], encoded_batch["targets"][valid])
+
+        if debug:
+            print(f"Test Loss: {loss.item():.4f}")
+
+        return loss.detach().item(), outputs, encoded_batch["targets"]
 
     def train(self, checkpoint_path: Optional[str] = None, debug: bool = False):
         history = []
