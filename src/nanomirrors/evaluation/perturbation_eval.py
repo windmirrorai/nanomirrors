@@ -172,9 +172,13 @@ def compute_expression_fidelity_metrics_by_group(
         preds = pred_groups[condition]
         gts = gt_groups[condition]
 
+        ctrl_mean = np.asarray(ctrl_adata.X.mean(axis=0)).flatten()
+        preds_delta = preds.mean(axis=0) - ctrl_mean
+        gts_delta = gts.mean(axis=0) - ctrl_mean
+
         # 1. Compute metrics for all genes
         mse_all_genes = mse(preds, gts)
-        pearson_delta_all_genes = pearsonr(preds.mean(axis=0), gts.mean(axis=0))[0]
+        pearson_delta_all_genes = pearsonr(preds_delta, gts_delta)[0]
 
         # 2. Compute metrics for DE genes
         de_result, de_result_significant = get_de_results_by_condition(ctrl_adata, condition, fdr=fdr)
@@ -187,7 +191,10 @@ def compute_expression_fidelity_metrics_by_group(
         print(f"preds_de shape: {preds_de.shape}, gts_de shape: {gts_de.shape}")
         
         mse_de_genes = mse(preds_de, gts_de)
-        pearson_delta_de_genes = pearsonr(preds_de.mean(axis=0), gts_de.mean(axis=0))[0]
+        pearson_delta_de_genes = pearsonr(
+            preds_delta[de_genes_sig_mask], 
+            gts_delta[de_genes_sig_mask]
+        )[0]
 
         # Compute energy distance
         e_dist = energy_distance(preds, gts)
@@ -260,6 +267,7 @@ def compute_differential_expression(
 def deg_set_overlap(pred_de_result_df: pd.DataFrame, gt_de_result_df: pd.DataFrame) -> float:
     """
     Compute the overlap between the predicted and ground truth sets of differentially expressed genes.
+    Essentially, DEG Recall@N, where N is the number of ground truth DE genes.
 
     Args:
         pred_de_result_df (pd.DataFrame): Predicted DE results DataFrame.
@@ -395,6 +403,10 @@ def compute_differential_expression_metrics_by_group(
         preds = pred_groups[condition]
         gts = gt_groups[condition]
 
+        if preds.min() < 0:
+            print(f"Warning: Negative values found in predictions for condition '{condition}'. Minimum value: {preds.min()}. Clipping to zero.")
+            preds = np.clip(preds, a_min=0, a_max=None)
+
         # 0. Compute differential expression results for the ground truth and predicted data.
         gt_de_result, gt_de_result_sig= get_de_results_by_condition(ctrl_adata, condition, fdr=fdr)
         pred_de_result, pred_de_result_sig = compute_differential_expression(preds, ctrl_adata, fdr=fdr)
@@ -403,7 +415,7 @@ def compute_differential_expression_metrics_by_group(
         deg_overlap = deg_set_overlap(pred_de_result_sig, gt_de_result_sig)
 
         # 2, 3. Compute the log fold change Spearman correlation, direction agreement.
-        logfc_results = logfc_metrics(pred_de_result_sig, gt_de_result_sig)
+        logfc_results = logfc_metrics(pred_de_result, gt_de_result_sig)
         logfc_spearman_corr = logfc_results["logfc_spearman"]
         direction_agreement = logfc_results["direction_agreement"]
 
@@ -633,7 +645,7 @@ def compute_perturbation_metrics(
     covariates: List[dict],
     ctrl_adata: ad.AnnData,
     fdr=0.05,
-    neighborhood_k=2,
+    neighborhood_k=5,
 ):
     pred_groups, gt_groups = _group_results_by_condition(
         preds,
@@ -641,6 +653,10 @@ def compute_perturbation_metrics(
         perturbations,
         covariates,
     )
+
+    # Remove control groups 
+    pred_groups = {cond: group for cond, group in pred_groups.items() if cond != "control"}
+    gt_groups = {cond: group for cond, group in gt_groups.items() if cond != "control"}
 
     for cond, group in pred_groups.items():
         print(f"Condition: {cond}, shape of samples: {group.shape}\n")

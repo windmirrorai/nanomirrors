@@ -60,13 +60,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, required=False, help="Path to the local input .h5ad file.")
     parser.add_argument("--input_url", type=str, required=False, help="URL to the input .h5ad file. Ignored if --input is provided.")
-    parser.add_argument("--input_name", type=str, help="Name of the input dataset.", choices=DATASETS_CHOICES)
+    parser.add_argument("--input_name", type=str, default="adamson2016", help="Name of the input dataset.", choices=DATASETS_CHOICES)
     parser.add_argument("--no_logging", action="store_true", help="Disable logging of the run.")
     parser.add_argument("--save_root", type=str, default="./prp_run", help="Directory to save logs and outputs.")
 
     parser.add_argument("--model", type=str, choices=MODEL_CHOICES, default="scGPT_human", help="Type of model to train.")
-
-    parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training and evaluation.")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training and evaluation.")
+    parser.add_argument("--mode", type=str, choices=["train", "test"], default="train", help="Mode to run the script in.")
+    
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")    
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
 
@@ -97,6 +98,10 @@ if __name__ == "__main__":
     data = perturb_datasets.load_dataset(args.input_name)
     print(f"dataset loaded with shape {data.shape}")
     train_data, val_data, test_data = get_train_val_test_data(data)
+    
+    num_train_perturbations = len([x for x in train_data.obs['perturbation'].unique().tolist() if x != 'control'])
+    num_val_perturbations = len([x for x in val_data.obs['perturbation'].unique().tolist() if x != 'control'])
+    num_test_perturbations = len([x for x in test_data.obs['perturbation'].unique().tolist() if x != 'control'])
 
     '''
     Initialize the model and trainer
@@ -114,76 +119,45 @@ if __name__ == "__main__":
         model=model,
         train_data=train_data,
         val_data=val_data,
+        test_data=test_data,
         config=trainer_config,
-        device=device
+        device=device,
+        logger=logger,
+        save_dir=args.save_dir,
     )
-    history = trainer.train(checkpoint_path=f"{args.save_dir}/best_model.ckpt", debug=args.debug)
+    if args.mode == "train":
+        history = trainer.train(checkpoint_path=f"{args.save_dir}/best_model.pt", debug=args.debug)
 
-    trainer.load_checkpoint(f"{args.save_dir}/best_model.ckpt")
+        # Save the training history.
+        if args.save_dir:
+            with open(f"{args.save_dir}/training_history.json", "w") as f:
+                json.dump(history, f, indent=4)
+
+    trainer.load_checkpoint(f"{args.save_dir}/best_model.pt")
 
     '''
     Evaluate the model on the test data
     '''
-    # [scGPT only] create a test set specific input encoder without truncation.
-    test_input_encoder = scGPTInputEncoderForPerturbation(
-        gene_names = test_data.var['gene_symbol'].tolist(),
-        model_name = model.config.model_name,
-        truncate_to_max_length=False,
-    )
+    test_loss, test_eval_results, preds, gts, perturbations, covariates = trainer.test(debug=args.debug)
 
-    test_dataset = PairedPerturbationDataset(test_data, include_ctrl_ctrl_pairs=False)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
-
-    preds = [] #[n_cells, n_genes]
-    gts = []
-    perturbations = []
-    covariates = []
-    test_losses = []
-    
-    bidx = 0
-    for batch in tqdm(test_loader, desc="Testing"):
-        loss, outputs, targets = trainer.test_step(batch, input_encoder=test_input_encoder, debug=True)
-        test_losses.append(loss)
-
-        preds.append(outputs.detach().cpu().numpy())
-        gts.append(targets.detach().cpu().numpy())
-        perturbations.extend(batch["perturbations"])
-        covariates.extend(batch["covariates"])
-        
-        
-        bidx += 1
-
-        if bidx >= 1:
-            break
-
-    preds = np.concatenate(preds, axis=0)
-    gts = np.concatenate(gts, axis=0)
-
-    assert preds.shape == gts.shape, f"Predictions shape {preds.shape} does not match ground truth shape {gts.shape}"
-    test_loss = np.mean(test_losses)
-    print(f"Test Loss: {test_loss}")
-
-    print("Evaluating perturbation response prediction metrics...")
-    print(f"preds shape: {preds.shape}, gts shape: {gts.shape}")
-    eval_results = compute_perturbation_metrics(preds, 
-                                                gts, 
-                                                perturbations,
-                                                covariates,
-                                                ctrl_adata=test_data[test_data.obs['perturbation'] == 'control'],
-                                                )
-    for k, v in eval_results.items():
-        print(f"{k}: {v}")
-    
     # Save evaluation results.
     np.savez(f"{args.save_dir}/eval_results.npz", 
              preds=preds, 
              gts=gts, 
              perturbations=perturbations, 
              covariates=covariates, 
-             **eval_results)
+             **test_eval_results)
+    
     if args.save_dir:
         with open(f"{args.save_dir}/eval_metrics.json", "w") as f:
-            json.dump({"eval_results": eval_results}, f, indent=4)
+            json.dump({
+                "eval_results": test_eval_results,
+                "num_train_perturbations": num_train_perturbations,
+                "num_val_perturbations": num_val_perturbations,
+                "num_test_perturbations": num_test_perturbations,
+                }, f, indent=4)
+    
+    print(f"Done. Saved results to {args.save_dir} .")
 
 
 
