@@ -43,6 +43,10 @@ class scGPTTokenizer:
                  exprs: np.ndarray, # shape [B, G]
                  gene_names: List[str], # [G]
                  **kwargs) -> Dict[str, torch.Tensor]:
+        # Convert from torch.Tensor to numpy.ndarray if necessary
+        if isinstance(exprs, torch.Tensor):
+            exprs = exprs.cpu().numpy()
+
         # Align Vocab.
         vocab_genes_idx = [idx for idx, g in enumerate(gene_names) if g in self.vocab]
 
@@ -50,12 +54,12 @@ class scGPTTokenizer:
         aligned_gene_ids = np.array([self.vocab[gene_names[idx]] for idx in vocab_genes_idx]) # shape [G_vocab]
         if len(aligned_gene_ids) == 0:
             raise ValueError("None of the input genes are in the vocabulary.")
-        print(f"Original genes: {len(gene_names)}| Genes in vocab: {len(aligned_gene_ids)}")
+        # print(f"Original genes: {len(gene_names)}| Genes in vocab: {len(aligned_gene_ids)}")
 
         # Determine the max sequence length T for this batch (after filtering zero-expression genes)
         max_expressed = np.max(np.sum(aligned_exprs > 0, axis=1)) + 1 # +1 for the [CLS] token
         T = min(max_expressed, self.max_length)
-        print(f"Max expressed genes in this batch (after filtering zero-expression genes): {max_expressed-1}. Using T={T} for encoding.")
+        # print(f"Max expressed genes in this batch (after filtering zero-expression genes): {max_expressed-1}. Using T={T} for encoding.")
 
         encoded_cells = [self._encode(aligned_expr, aligned_gene_ids, T) for aligned_expr in aligned_exprs]
 
@@ -167,46 +171,21 @@ class scGPTInputEncoder:
 
     def __init__(self,
                  gene_names: List[str], 
-                 model_name="scGPT_human", 
-                 perturbations_separator="+",
-                 truncate_to_max_length=False):
+                 model_name="scGPT_human"):
         self.tokenizer = scGPTTokenizer.from_pretrained(model_name)
         self.gene_names = gene_names
-        self.T = self.tokenizer.max_length
-        self.perturbations_separator = perturbations_separator
-        self.truncate_to_max_length = truncate_to_max_length
-
-        # fixed gene set for all cells.
-        self.gene_ids = np.array([
-            self.tokenizer.vocab.get(g, self.tokenizer.vocab.get("<pad>"))   # OOV → <pad> token id
-            for g in self.gene_names
-        ])
 
         self.unknowns = [g for g in self.gene_names if g not in self.tokenizer.vocab]
 
     def encode(self, batch: dict) -> dict:
-        gene_values = batch["exprs"]
 
-        if not isinstance(gene_values, torch.Tensor):
-            gene_values = torch.tensor(gene_values, dtype=torch.float32)
+        encoded = self.tokenizer.encode(exprs=batch["exprs"],
+                                        gene_names=self.gene_names)
         
-        B, n_genes = gene_values.shape
-
-        if self.truncate_to_max_length and n_genes > self.T:
-            idx = torch.randperm(n_genes)[:self.T]
-
-            gene_values   = gene_values[:, idx]
-            gene_ids      = torch.from_numpy(self.gene_ids[idx]).long().unsqueeze(0).repeat(B, 1)
-        else:
-            gene_ids      = torch.from_numpy(self.gene_ids).long().unsqueeze(0).repeat(B, 1)
-
-        # all-False padding mask
-        src_key_padding_mask = torch.zeros_like(gene_values, dtype=torch.bool)
-
         return {
-            "gene_tokens":    gene_ids,
-            "exprs":          gene_values,
-            "padding_mask":   src_key_padding_mask,
+            "gene_tokens":       encoded["gene_ids"],
+            "exprs":             encoded["exprs"],
+            "padding_mask":      encoded["padding_mask"],
         }
 
     @classmethod

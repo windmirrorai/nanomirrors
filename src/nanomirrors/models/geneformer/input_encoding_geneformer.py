@@ -449,8 +449,6 @@ class GeneformerInputEncoder:
         self.gene_names = gene_names
         self.tokenizer = GeneformerTokenizer.from_pretrained(model_name)
 
-        print("Original gene names:", gene_names)
-
         if len(gene_names) > 0 and not gene_names[0].startswith("ENSG"):
             # convert to ensembl IDs using tokenizer's mapping
             self.gene_names = [self.tokenizer._canonical_gene(g) for g in gene_names]
