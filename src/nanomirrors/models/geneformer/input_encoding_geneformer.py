@@ -135,7 +135,7 @@ class GeneformerTokenizer:
 
         # Make sure raw counts are provided (not normalized)
         if input_log1ped:
-            print("Input expression matrix is not in raw counts. Converting from log1p scale.")
+            # print("Input expression matrix is not in raw counts. Converting from log1p scale.")
             exprs = np.expm1(exprs)
         if not np.isfinite(exprs).all() or np.any(exprs < 0):
             raise ValueError("Expression values must be finite and nonnegative.")
@@ -169,7 +169,7 @@ class GeneformerTokenizer:
         aligned_exprs = np.stack(aligned_exprs, axis=1)  # shape [B, G_vocab]
         aligned_gene_tokens = np.asarray(aligned_gene_tokens, dtype=np.int64)  # shape [G_vocab]
 
-        print(f"Original genes: {len(gene_names)}| Genes in vocab: {len(aligned_gene_tokens)}")
+        # print(f"Original genes: {len(gene_names)}| Genes in vocab: {len(aligned_gene_tokens)}")
 
         # Normalize by target sum and then median of each gene
         if not target_sum_normalized:
@@ -243,6 +243,9 @@ class GeneformerTokenizer:
         edited_attention_mask = attention_mask.clone()
 
         for idx, pert_genes in enumerate(perturbations):
+            if "control" in pert_genes: # edit does not apply to `control`.
+                continue
+                
             valid_ids = edited_input_ids[idx][edited_attention_mask[idx].bool()]
             input_genes = (
                 valid_ids[1:-1].tolist()
