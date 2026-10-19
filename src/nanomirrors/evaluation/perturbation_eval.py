@@ -25,7 +25,7 @@ def _group_results_by_condition(
         preds: Predicted values, shape (n_cells, n_genes).
         gts: Ground truth values, shape (n_cells, n_genes).
         perturbations: List of perturbation labels corresponding to each sample.
-        covariates: List of dictionaries containing covariate information for each sample, 
+        covariates: List of dictionaries containing covariate information for each sample, excluding the `perturbation`.
         e.g. [{"batch": 1, "cell_line": "A"}, {"batch": 2, "cell_line": "B"}, ...].
 
     Returns:
@@ -661,6 +661,9 @@ def compute_perturbation_metrics(
     for cond, group in pred_groups.items():
         print(f"Condition: {cond}, shape of samples: {group.shape}\n")
 
+    print(f"Number of conditions: {len(pred_groups)}")
+
+    print(f"Computing expression fidelity metrics by group...")
     expression_metrics_by_group = compute_expression_fidelity_metrics_by_group(
         pred_groups,
         gt_groups,
@@ -679,6 +682,7 @@ def compute_perturbation_metrics(
     for k in expression_metrics:
         expression_metrics[k] = np.mean(expression_metrics[k])
 
+    print(f"Computing differential expression metrics by group...")
     de_metrics_by_group = compute_differential_expression_metrics_by_group(
         pred_groups,
         gt_groups,
@@ -697,6 +701,7 @@ def compute_perturbation_metrics(
     for k in de_metrics:
         de_metrics[k] = np.mean(de_metrics[k])
 
+    print(f"Computing perturbation discrimination metrics by group...")
     discrimination_metrics = compute_structure_metrics(
         pred_groups,
         gt_groups,

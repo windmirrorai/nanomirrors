@@ -177,7 +177,7 @@ class PairedSetPerturbationDataset(Dataset):
             - ``exprs``: Target expression set, shape ``(set_size, n_genes)``.
             - ``ctrl_exprs``: Control expression set, shape ``(set_size, n_genes)``.
             - ``perturbations``: List of perturbation names shared by the target cells in the set
-            - ``other_covariates``: Dict mapping non-perturbation covariate names to the values shared by cells in the set.
+            - ``covariates``: Dict mapping non-perturbation covariate names to the values shared by cells in the set.
     Notes:
         Target cells within each set share the same values for all ``set_covariates``,
         and control cells are sampled from the same covariate group (except for ``perturbation_col``).
@@ -251,10 +251,10 @@ class PairedSetPerturbationDataset(Dataset):
 
                 self.sets.append(cell_indices)
 
-        self.other_covariates = [c for c in self.set_covariates if c != self.perturbation_col]
-        if len(self.other_covariates) > 0:
+        self.covariates = [c for c in self.set_covariates if c != self.perturbation_col]
+        if len(self.covariates) > 0:
             self.covariate_ctrl_idxs = {} # Dict mapping covariate values to control pool indices of the same covariate values (except for perturbation_col)
-            for covariate_values, group in adata.obs.groupby(self.other_covariates):
+            for covariate_values, group in adata.obs.groupby(self.covariates):
                 if not isinstance(covariate_values, tuple):
                     covariate_values = (covariate_values,)
 
@@ -281,12 +281,12 @@ class PairedSetPerturbationDataset(Dataset):
         cell_set_idx = self.sets[idx]
         covariate_values = self.adata.obs.iloc[cell_set_idx[0]][self.set_covariates]
 
-        if len(self.other_covariates) == 0:
+        if len(self.covariates) == 0:
             ctrl_pool_idx = self.ctrl_idx
         else:
-            ctrl_pool_idx = self.covariate_ctrl_idxs[tuple(covariate_values[self.other_covariates])]
+            ctrl_pool_idx = self.covariate_ctrl_idxs[tuple(covariate_values[self.covariates])]
         if len(ctrl_pool_idx) == 0:
-            raise ValueError(f"No control cells found for covariate values: {covariate_values[self.other_covariates].to_dict()}")
+            raise ValueError(f"No control cells found for covariate values: {covariate_values[self.covariates].to_dict()}")
         
         ctrl_paired = None
         if self.strategy == "random":
@@ -300,5 +300,5 @@ class PairedSetPerturbationDataset(Dataset):
             "exprs": _to_numpy(self.adata.X[cell_set_idx]),
             "ctrl_exprs": _to_numpy(self.adata.X[ctrl_paired]),
             "perturbations": covariate_values[self.perturbation_col],
-            "other_covariates": covariate_values[self.other_covariates].to_dict(),
+            "covariates": covariate_values[self.covariates].to_dict(),
         }

@@ -11,14 +11,11 @@ import perturb_datasets
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from nanomirrors.data.perturbation_dataset import PairedPerturbationDataset
+from nanomirrors.data.perturbation_dataset import PairedSetPerturbationDataset
 
-from nanomirrors.models.state.input_encoding_state import StateInputEncoderForPerturbation
 from nanomirrors.models.state.modeling_state import StateForPerturbationResponsePrediction
 from nanomirrors.models.state.configuration_state import StateConfig
 from nanomirrors.models.state.training_state import StateTrainerForPerturbationResponsePrediction, StateTrainerConfig
-
-from nanomirrors.evaluation import compute_perturbation_metrics
 
 MODEL_CHOICES = ["scGPT_human", 
                  "State", 
@@ -60,6 +57,11 @@ if __name__ == "__main__":
 
     parser.add_argument("--model", type=str, choices=MODEL_CHOICES, default="State", help="Type of model to train.")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training and evaluation.")
+
+    parser.add_argument("--cell_set_size", type=int, default=64, help="Cell set size for the model.")
+    parser.add_argument("--use_multi_hot", action="store_true", help="Use multi-hot encoding for perturbations.")
+    parser.add_argument("--use_pert_features", action="store_true", help="Use perturbation features for encoding.")
+
     parser.add_argument("--mode", type=str, choices=["train", "test"], default="train", help="Mode to run the script in.")
     
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")    
@@ -67,12 +69,21 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if not args.use_multi_hot and not args.use_pert_features:
+        raise ValueError("At least one of --use_multi_hot or --use_pert_features must be specified.")
+    if args.use_multi_hot and args.use_pert_features:
+        print(f"[WARNING] Both --use_multi_hot and --use_pert_features were specified. Disabling --use_pert_features.")
+        args.use_pert_features = False
+
     seed_everything(args.seed)
 
     '''
     Setup logging and output directories
     '''
-    args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}"
+    if args.use_pert_features:
+        args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}-pert_features"
+    else:
+        args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}-multi_hot"
     os.makedirs(args.save_dir, exist_ok=True)
 
     logger = None
@@ -99,7 +110,9 @@ if __name__ == "__main__":
     num_train_perturbations = len([x for x in train_data.obs['perturbation'].unique().tolist() if x != 'control'])
     num_val_perturbations = len([x for x in val_data.obs['perturbation'].unique().tolist() if x != 'control'])
     num_test_perturbations = len([x for x in test_data.obs['perturbation'].unique().tolist() if x != 'control'])
-
+    total_perturbations = num_train_perturbations + num_val_perturbations + num_test_perturbations
+    n_genes = train_data.shape[1]
+    
     '''
     Initialize the model and trainer
     '''
@@ -107,10 +120,16 @@ if __name__ == "__main__":
     if torch.backends.mps.is_available():
         device = torch.device("mps")
 
-    config = StateConfig()
-    model = StateForPerturbationResponsePrediction(config, n_genes=train_data.shape[1])
+    config = StateConfig(input_dim=n_genes, 
+                         output_dim=n_genes, 
+                         pert_dim=total_perturbations+1 if args.use_multi_hot else 5120, 
+                         cell_set_size=args.cell_set_size,
+                         use_multi_hot=args.use_multi_hot,
+                         use_pert_features=args.use_pert_features)
+    model = StateForPerturbationResponsePrediction(config)
     model = model.to(device)
 
+    # TODO: pass set_covariates from dataset
     trainer_config = StateTrainerConfig(batch_size=args.batch_size)
     trainer = StateTrainerForPerturbationResponsePrediction(
         model=model,
@@ -119,6 +138,8 @@ if __name__ == "__main__":
         test_data=test_data,
         config=trainer_config,
         device=device,
+        perturbation_vocab=data.obs['perturbation'].unique().tolist(),
+        set_covariates=None,
         logger=logger,
         save_dir=args.save_dir,
     )

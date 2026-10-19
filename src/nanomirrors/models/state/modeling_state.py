@@ -162,7 +162,7 @@ class StateLatentToGeneDecoder(nn.Module):
 
 ## If output_space = `gene`, output = self.project_out(z + input) 
 ## If output_space = `embedding`, output = self.project_out(z + input); gene_expr = self.gene_decoder(output)   # E -> G
-class StateModel(nn.Module):
+class StateForPerturbationResponsePrediction(nn.Module):
 
     def __init__(self, config: StateConfig):
         super().__init__()

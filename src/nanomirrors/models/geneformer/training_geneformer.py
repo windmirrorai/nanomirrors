@@ -96,19 +96,19 @@ class GeneformerTrainerForPerturbationResponsePrediction:
             )
             else torch.float16
         )
-        
+        self.scaler_enabled = (
+            self.amp
+            and self.device.type == "cuda"
+            and self.amp_dtype == torch.float16
+        )
         self.scaler = torch.amp.GradScaler(
             "cuda",
-            enabled=(
-                self.amp
-                and self.device.type == "cuda"
-                and self.amp_dtype == torch.float16
-            ),
+            enabled=self.scaler_enabled
         ) # Only use scaler if AMP is enabled and using float16 on CUDA since bf16 does not require it
 
         self.global_step = 0
 
-        print(f"Trainer initialized with device: {self.device}, amp: {self.amp}, amp_dtype: {self.amp_dtype}")
+        print(f"Trainer initialized with device: {self.device}, amp: {self.amp}, amp_dtype: {self.amp_dtype}, scaler_enabled: {self.scaler_enabled}")
 
     def _log(self, message):
         if self.logger:
@@ -232,8 +232,8 @@ class GeneformerTrainerForPerturbationResponsePrediction:
         self.best_val_metric = float("-inf")
         self.patience = 0
 
-        while self.global_step < self.config.max_steps:   
-            for batch in tqdm(self.train_loader):
+        while self.global_step < self.config.max_steps:
+            for idx, batch in enumerate(tqdm(self.train_loader)):
                 loss = self.train_step(batch, debug=debug)
                 train_losses.append({"step": self.global_step, "train_loss": loss})
 
@@ -248,6 +248,7 @@ class GeneformerTrainerForPerturbationResponsePrediction:
                         self._log("[Warning] Validation loader is not provided. No checkpoint will be saved.")
                         continue
 
+                    print(f"Performing validation at step {self.global_step} ...")
                     val_loss, val_results, _, _, _, _ = self.evaluate(loader=self.val_loader, debug=debug)
                     val_losses.append({"step": self.global_step, "val_loss": val_loss})
                     metrics_history.append({"step": self.global_step, **val_results}) 
@@ -269,12 +270,12 @@ class GeneformerTrainerForPerturbationResponsePrediction:
                         self.patience += 1
                         if self.patience >= self.config.early_stopping_patience:
                             self._log(f"Early stopping triggered after {self.global_step} steps.")
-                            break
-                            
+                            break    
+               
                 if self.global_step >= self.config.max_steps:
                     self._log(f"Maximum training steps reached: {self.global_step}, stopping training.")
                     break
-        
+                    
         return {
             "train_losses": train_losses,
             "val_losses": val_losses,

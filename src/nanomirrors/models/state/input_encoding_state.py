@@ -34,9 +34,9 @@ class StateInputEncoderForPerturbation:
         other_covariates:  dict[str, list]
 
     STATE inputs:
-        basal_exprs: [B, S, input_dim]
-        perts:       [B, pert_dim] # since each set shares the same perturbation across all cells.
-        targets:     [B, S, input_dim]
+        basal_exprs:    [B, S, input_dim]
+        perts:          [B, pert_dim] # since each set shares the same perturbation across all cells.
+        targets:        [B, S, input_dim]
     """
 
     def __init__(
@@ -66,6 +66,7 @@ class StateInputEncoderForPerturbation:
             self.perturbation_vocab = perturbation_vocab
         if use_pert_features:
             self.perturbation_features = perturbation_features
+            self.unknown_perturbation_feature = torch.zeros_like(next(iter(perturbation_features.values())))
         
         self.input_key = input_key
         self.target_key = target_key
@@ -91,10 +92,10 @@ class StateInputEncoderForPerturbation:
             merged_perts_list = []
             for ps in perts_list:
                 if len(ps) > 1:
-                    merged_perts = torch.stack([self.perturbation_features[p] for p in ps])
+                    merged_perts = torch.stack([self.perturbation_features.get(p, self.unknown_perturbation_feature) for p in ps])
                     merged_perts = torch.mean(merged_perts, dim=0, keepdim=True)
                 else:
-                    merged_perts = self.perturbation_features[ps[0]].view(1, -1)
+                    merged_perts = self.perturbation_features.get(ps[0], self.unknown_perturbation_feature).view(1, -1)
                 merged_perts_list.append(merged_perts)
             perts = torch.cat(merged_perts_list, dim=0) # [B, pert_dim]
 

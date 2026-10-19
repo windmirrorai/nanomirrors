@@ -1,9 +1,12 @@
 from dataclasses import asdict, dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 from tqdm import tqdm
 from pathlib import Path
 import warnings
 import logging
+
+import psutil
+import os
 
 import torch
 import torch.nn as nn
@@ -15,6 +18,8 @@ from nanomirrors.data.perturbation_dataset import PairedPerturbationDataset
 from nanomirrors.models.scgpt.input_encoding_scgpt import scGPTInputEncoderForPerturbation
 from nanomirrors.evaluation import compute_perturbation_metrics
 
+process = psutil.Process(os.getpid())
+
 @dataclass
 class scGPTTrainerConfig:
     lr: float = 1e-4
@@ -23,7 +28,7 @@ class scGPTTrainerConfig:
     amp: bool = True # Use automatic mixed precision during training
     scheduler_gamma: float = 0.9
 
-    early_stopping_patience: int = 2000
+    early_stopping_patience: int = 5 # Number of validation steps to wait before early stopping
     gradient_clip_norm: float = 1.0
 
     val_every: int = 1000
@@ -53,7 +58,7 @@ class scGPTTrainerForPerturbationResponsePrediction:
         
         # Initialize the model-task specific dataset, dataloaders.
         if train_data is not None:
-            self.train_dataset = PairedPerturbationDataset(train_data, pair_covariates=pair_covariates)
+            self.train_dataset = PairedPerturbationDataset(train_data, pair_covariates=pair_covariates, include_ctrl_ctrl_pairs=False)
             self.train_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True)
         
         if val_data is not None:
@@ -103,9 +108,14 @@ class scGPTTrainerForPerturbationResponsePrediction:
         ) # Only use scaler if AMP is enabled and using float16 on CUDA since bf16 does not require it
 
         self.global_step = 0
+
+        print(f"Trainer initialized with device: {self.device}, amp: {self.amp}, amp_dtype: {self.amp_dtype}")
     
-    def _log(self, message: str):
-        return lambda: self.logger.info(message) if self.logger is not None else print(message)
+    def _log(self, message):
+        if self.logger:
+            self.logger.info(message)
+        else:
+            print(message)
         
     def loss_func(self, outputs, targets):
         loss = self.loss_fn(outputs, targets) # [B, T] -> [B] -> scalar
@@ -235,7 +245,7 @@ class scGPTTrainerForPerturbationResponsePrediction:
                 train_losses.append({"step": self.global_step, "train_loss": loss})
 
                 if self.global_step % self.config.log_every == 0 or self.global_step == 1:
-                    self._log(f"Step {self.global_step}, Train Loss: {loss:.4f}")
+                    self._log(f"Step {self.global_step} | Train Loss: {loss:.4f}")
     
                 '''
                 Perform validation every self.config.val_every steps.
@@ -290,10 +300,18 @@ class scGPTTrainerForPerturbationResponsePrediction:
             loss, outputs, targets = self.test_step(batch, debug=debug)
             eval_losses.append(loss)
 
-            preds.append(outputs.detach().cpu().numpy())
-            gts.append(targets.detach().cpu().numpy())
+            preds.append(outputs.detach().float().cpu().numpy())
+            gts.append(targets.detach().float().cpu().numpy())
             perturbations.extend(batch["perturbations"])
             covariates.extend(batch["covariates"])
+
+            if bidx % 10 == 0:
+                print(
+                    f"Batch {bidx} | "
+                    f"RSS: {process.memory_info().rss / 1e9:.2f} GB | "
+                    f"Available RAM: {psutil.virtual_memory().available / 1e9:.2f} GB",
+                    flush=True,
+                )
 
             # bidx += 1
 

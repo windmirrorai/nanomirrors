@@ -10,6 +10,8 @@ class StateConfig:
     input_dim: int | None = None
     output_dim: int | None = None
     pert_dim: int | None = None # num of perturbastions if multihot embedding, 5120 if using ESM2 embeddings
+    use_multi_hot: bool = True # if using multi-hot encoding for perturbations
+    use_pert_features: bool = False # if using ESM2 embeddings, dim 5120
 
     output_space: Literal["embedding", "gene", "all"] = "gene"
 
@@ -23,7 +25,7 @@ class StateConfig:
     latent_decoder_dropout: float = 0.1
     latent_decoder_layernorm_eps: float = 1e-5
 
-    cell_set_size: int = 4
+    cell_set_size: int = 256
     hidden_dim: int = 768
 
     transformer_backbone: Literal["llama", "gpt2"] = "llama"

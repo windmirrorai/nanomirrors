@@ -11,14 +11,9 @@ import perturb_datasets
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from nanomirrors.data.perturbation_dataset import PairedPerturbationDataset
-
-from nanomirrors.models.scgpt.input_encoding_scgpt import scGPTInputEncoderForPerturbation
 from nanomirrors.models.scgpt.modeling_scgpt import scGPTForPerturbationResponsePrediction
 from nanomirrors.models.scgpt.configuration_scgpt import scGPTConfig
 from nanomirrors.models.scgpt.training_scgpt import scGPTTrainerForPerturbationResponsePrediction, scGPTTrainerConfig
-
-from nanomirrors.evaluation import compute_perturbation_metrics
 
 MODEL_CHOICES = ["scGPT_human", 
                  "StateTransition", 
