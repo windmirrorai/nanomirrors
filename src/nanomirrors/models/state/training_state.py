@@ -351,6 +351,9 @@ class StateTrainerForPerturbationResponsePrediction:
     def test(self, debug=False):
         return self.evaluate(self.test_loader, debug=debug)
 
+    def train_validate(self, debug=False):
+        return self.evaluate(self.train_loader, debug=debug)
+
     def save_checkpoint(self, path: str):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -62,6 +62,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, choices=MODEL_CHOICES, default="scGPT_human", help="Type of model to train.")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training and evaluation.")
     parser.add_argument("--mode", type=str, choices=["train", "test"], default="train", help="Mode to run the script in.")
+    parser.add_argument("--eval_train", action="store_true", help="Evaluate the model on the training set.")
     
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")    
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
@@ -129,6 +130,31 @@ if __name__ == "__main__":
                 json.dump(history, f, indent=4)
 
     trainer.load_checkpoint(f"{args.save_dir}/best_model.pt")
+
+    '''
+    Evaluate the model on the training data
+    '''
+    if args.eval_train:
+        train_loss, train_eval_results, train_preds, train_gts, train_perturbations, train_covariates = trainer.train_validate(debug=args.debug)
+
+        # Save training evaluation results.
+        np.savez(f"{args.save_dir}/train_eval_results.npz", 
+                preds=train_preds, 
+                gts=train_gts, 
+                perturbations=train_perturbations, 
+                covariates=train_covariates, 
+                **train_eval_results)
+
+        if args.save_dir:
+            with open(f"{args.save_dir}/train_eval_metrics.json", "w") as f:
+                json.dump({
+                    "train_eval_results": train_eval_results,
+                    "num_train_perturbations": num_train_perturbations,
+                    "num_val_perturbations": num_val_perturbations,
+                    "num_test_perturbations": num_test_perturbations,
+                    }, f, indent=4)
+        
+        print(f"Training evaluation results saved to {args.save_dir}/train_eval_results.npz and {args.save_dir}/train_eval_metrics.json")
 
     '''
     Evaluate the model on the test data

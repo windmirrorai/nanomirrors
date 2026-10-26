@@ -5,7 +5,6 @@ from pathlib import Path
 import warnings
 import logging
 
-import psutil
 import os
 
 import torch
@@ -17,8 +16,6 @@ import anndata as ad
 from nanomirrors.data.perturbation_dataset import PairedPerturbationDataset
 from nanomirrors.models.scgpt.input_encoding_scgpt import scGPTInputEncoderForPerturbation
 from nanomirrors.evaluation import compute_perturbation_metrics
-
-process = psutil.Process(os.getpid())
 
 @dataclass
 class scGPTTrainerConfig:
@@ -305,13 +302,13 @@ class scGPTTrainerForPerturbationResponsePrediction:
             perturbations.extend(batch["perturbations"])
             covariates.extend(batch["covariates"])
 
-            if bidx % 10 == 0:
-                print(
-                    f"Batch {bidx} | "
-                    f"RSS: {process.memory_info().rss / 1e9:.2f} GB | "
-                    f"Available RAM: {psutil.virtual_memory().available / 1e9:.2f} GB",
-                    flush=True,
-                )
+            # if bidx % 10 == 0:
+            #     print(
+            #         f"Batch {bidx} | "
+            #         f"RSS: {process.memory_info().rss / 1e9:.2f} GB | "
+            #         f"Available RAM: {psutil.virtual_memory().available / 1e9:.2f} GB",
+            #         flush=True,
+            #     )
 
             # bidx += 1
 
@@ -338,6 +335,9 @@ class scGPTTrainerForPerturbationResponsePrediction:
     
     def test(self, debug=False):
         return self.evaluate(self.test_loader, debug=debug)
+
+    def train_validate(self, debug=False):
+        return self.evaluate(self.train_loader, debug=debug)
 
     def save_checkpoint(self, path: str):
         path = Path(path)
