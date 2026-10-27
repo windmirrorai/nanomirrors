@@ -207,8 +207,9 @@ class PairedSetPerturbationDataset(Dataset):
         if set_covariates is None:
             set_covariates = [self.perturbation_col]
         elif self.perturbation_col not in set_covariates:
-            raise ValueError(f"set_covariates must include {self.perturbation_col}")
-        self.set_covariates = set_covariates
+            set_covariates = list(set_covariates)
+            set_covariates.append(self.perturbation_col)
+        self.set_covariates = list(set_covariates)
 
         # make sure set_covariates exist in adata.obs
         for cov in self.set_covariates:

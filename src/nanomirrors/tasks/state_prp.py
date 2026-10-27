@@ -59,8 +59,6 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training and evaluation.")
 
     parser.add_argument("--cell_set_size", type=int, default=64, help="Cell set size for the model.")
-    parser.add_argument("--use_multi_hot", action="store_true", help="Use multi-hot encoding for perturbations.")
-    parser.add_argument("--use_pert_features", action="store_true", help="Use perturbation features for encoding.")
 
     parser.add_argument("--mode", type=str, choices=["train", "test"], default="train", help="Mode to run the script in.")
     parser.add_argument("--eval_train", action="store_true", help="Evaluate the model on the training set.")
@@ -70,21 +68,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.use_multi_hot and not args.use_pert_features:
-        raise ValueError("At least one of --use_multi_hot or --use_pert_features must be specified.")
-    if args.use_multi_hot and args.use_pert_features:
-        print(f"[WARNING] Both --use_multi_hot and --use_pert_features were specified. Disabling --use_pert_features.")
-        args.use_pert_features = False
-
     seed_everything(args.seed)
 
     '''
     Setup logging and output directories
     '''
-    if args.use_pert_features:
-        args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}-pert_features"
-    else:
-        args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}-multi_hot"
+    args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}"
     os.makedirs(args.save_dir, exist_ok=True)
 
     logger = None
@@ -121,31 +110,22 @@ if __name__ == "__main__":
     if torch.backends.mps.is_available():
         device = torch.device("mps")
 
-    config = StateConfig(input_dim=n_genes, 
-                         output_dim=n_genes, 
-                         pert_dim=total_perturbations+1 if args.use_multi_hot else 5120, 
-                         cell_set_size=args.cell_set_size,
-                         use_multi_hot=args.use_multi_hot,
-                         use_pert_features=args.use_pert_features)
-    model = StateForPerturbationResponsePrediction(config)
+    model = StateForPerturbationResponsePrediction.from_pretrained(n_genes=n_genes, cell_set_size=args.cell_set_size)
     model = model.to(device)
 
-    # TODO: pass set_covariates from dataset
     trainer_config = StateTrainerConfig(batch_size=args.batch_size)
     trainer = StateTrainerForPerturbationResponsePrediction(
         model=model,
-        train_data=train_data,
-        val_data=val_data,
-        test_data=test_data,
         config=trainer_config,
         device=device,
-        perturbation_vocab=data.obs['perturbation'].unique().tolist(),
-        set_covariates=None,
         logger=logger,
         save_dir=args.save_dir,
     )
     if args.mode == "train":
-        history = trainer.train(checkpoint_path=f"{args.save_dir}/best_model.pt", debug=args.debug)
+        history = trainer.train(train_data=train_data,
+                                val_data=val_data,
+                                checkpoint_path=f"{args.save_dir}/best_model.pt",
+                                debug=args.debug)
 
         # Save the training history.
         if args.save_dir:
@@ -158,7 +138,8 @@ if __name__ == "__main__":
     Evaluate the model on the training data
     '''
     if args.eval_train:
-        train_loss, train_eval_results, train_preds, train_gts, train_perturbations, train_covariates = trainer.train_validate(debug=args.debug)
+        train_loss, train_eval_results, train_preds, train_gts, train_perturbations, train_covariates = trainer.test(data=train_data, 
+                                                                                                                     debug=args.debug)
 
         # Save training evaluation results.
         np.savez(f"{args.save_dir}/train_eval_results.npz", 
@@ -182,7 +163,7 @@ if __name__ == "__main__":
     '''
     Evaluate the model on the test data
     '''
-    test_loss, test_eval_results, preds, gts, perturbations, covariates = trainer.test(debug=args.debug)
+    test_loss, test_eval_results, preds, gts, perturbations, covariates = trainer.test(data=test_data, debug=args.debug)
 
     # Save evaluation results.
     np.savez(f"{args.save_dir}/eval_results.npz", 

@@ -274,8 +274,9 @@ class scGPTForPerturbationResponsePrediction(nn.Module):
         return pred.mean(dim=0) # [G]
 
     @classmethod
-    def from_pretrained(cls, model_type="scGPT_human"):
-        base = scGPTModel.from_pretrained(model_type)
+    def from_pretrained(cls, n_genes: int, model_name="scGPT_human"):
+        base = scGPTModel.from_pretrained(model_name)
+        
         model = cls(base.config)
         model.scgpt = base
 

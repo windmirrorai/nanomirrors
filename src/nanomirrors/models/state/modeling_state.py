@@ -201,4 +201,27 @@ class StateForPerturbationResponsePrediction(nn.Module):
             return output, gene_expr
         return output
 
+    @classmethod
+    def from_pretrained(cls, n_genes: int, model_name: str="State", **kwargs):
+        # NOTE: Currently only supports state models from scratch from a given configuration;
+        # Pretrained weights from SE(state embedding) are not yet supported.
+
+        config = StateConfig(input_dim=n_genes,
+                            output_dim=n_genes,
+                            pert_dim=5120)
+        
+        # Allow overriding of default configuration parameters using kwargs.
+        if "use_multi_hot" in kwargs:
+            config.use_multi_hot = kwargs["use_multi_hot"]
+        if "cell_set_size" in kwargs:
+            config.cell_set_size = kwargs["cell_set_size"]
+        if "pert_dim" in kwargs:
+            config.pert_dim = kwargs["pert_dim"]
+
+        base = cls(config)
+
+        print(f"Initialized State model. No pretrained weights are loaded.")
+        
+        return base
+
     

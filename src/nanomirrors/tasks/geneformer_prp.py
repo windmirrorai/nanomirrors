@@ -103,23 +103,22 @@ if __name__ == "__main__":
     if torch.backends.mps.is_available():
         device = torch.device("mps")
 
-    config = GeneformerConfig()
-    model = GeneformerForPerturbationResponsePrediction(config, n_genes=train_data.shape[1])
+    model = GeneformerForPerturbationResponsePrediction.from_pretrained(n_genes=train_data.shape[1], model_name=args.model)
     model = model.to(device)
 
     trainer_config = GeneformerTrainerConfig(batch_size=args.batch_size)
     trainer = GeneformerTrainerForPerturbationResponsePrediction(
         model=model,
-        train_data=train_data,
-        val_data=val_data,
-        test_data=test_data,
         config=trainer_config,
         device=device,
         logger=logger,
         save_dir=args.save_dir,
     )
     if args.mode == "train":
-        history = trainer.train(checkpoint_path=f"{args.save_dir}/best_model.pt", debug=args.debug)
+        history = trainer.train(train_data=train_data,
+                                val_data=val_data,
+                                checkpoint_path=f"{args.save_dir}/best_model.pt", 
+                                debug=args.debug)
 
         # Save the training history.
         if args.save_dir:
@@ -132,7 +131,8 @@ if __name__ == "__main__":
     Evaluate the model on the training data
     '''
     if args.eval_train:
-        train_loss, train_eval_results, train_preds, train_gts, train_perturbations, train_covariates = trainer.train_validate(debug=args.debug)
+        train_loss, train_eval_results, train_preds, train_gts, train_perturbations, train_covariates = trainer.test(data=train_data, 
+                                                                                                                     debug=args.debug)
 
         # Save training evaluation results.
         np.savez(f"{args.save_dir}/train_eval_results.npz", 
@@ -156,7 +156,8 @@ if __name__ == "__main__":
     '''
     Evaluate the model on the test data
     '''
-    test_loss, test_eval_results, preds, gts, perturbations, covariates = trainer.test(debug=args.debug)
+    test_loss, test_eval_results, preds, gts, perturbations, covariates = trainer.test(data=test_data,
+                                                                                       debug=args.debug)
 
     # Save evaluation results.
     np.savez(f"{args.save_dir}/eval_results.npz", 

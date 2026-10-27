@@ -147,6 +147,7 @@ def compute_expression_fidelity_metrics_by_group(
     ctrl_adata: ad.AnnData,
     fdr=0.05,
     top_deg=100,
+    debug=False,
 ) -> Dict[str, Dict[str, float]]:
     """
     Compute expression fidelity metrics for the given predicted and ground truth groups.
@@ -185,7 +186,8 @@ def compute_expression_fidelity_metrics_by_group(
         # 2. Compute metrics for DE genes
         de_result, de_result_significant = get_de_results_by_condition(ctrl_adata, condition, fdr=fdr)
         de_genes_sig = de_result_significant["gene"]
-        print(f"Number of significant DE genes: {len(de_genes_sig)}")
+        if debug:
+            print(f"[Eval] Number of significant DE genes: {len(de_genes_sig)}")
         de_genes_sig_mask = ctrl_adata.var_names.isin(de_genes_sig)
         cond_top_deg = min(top_deg, len(de_genes_sig))
         top_de_genes = de_result_significant.sort_values("pvals_adj").head(cond_top_deg)["gene"]
@@ -197,7 +199,8 @@ def compute_expression_fidelity_metrics_by_group(
 
         preds_de = preds[:, de_genes_sig_mask]
         gts_de = gts[:, de_genes_sig_mask]
-        print(f"preds_de shape: {preds_de.shape}, gts_de shape: {gts_de.shape}")
+        if debug:
+            print(f"[Eval] preds_de shape: {preds_de.shape}, gts_de shape: {gts_de.shape}")
         
         mse_de_genes = mse(preds_de, gts_de)
         pearson_delta_de_genes = pearsonr(
@@ -207,7 +210,8 @@ def compute_expression_fidelity_metrics_by_group(
 
         preds_top_de = preds[:, top_de_genes_mask]
         gts_top_de = gts[:, top_de_genes_mask]
-        print(f"preds_top_de shape: {preds_top_de.shape}, gts_top_de shape: {gts_top_de.shape}")
+        if debug:
+            print(f"[Eval] preds_top_de shape: {preds_top_de.shape}, gts_top_de shape: {gts_top_de.shape}")
         
         mse_top_de_genes = mse(preds_top_de, gts_top_de)
         pearson_delta_top_de_genes = pearsonr(
@@ -264,7 +268,14 @@ def compute_differential_expression(
     exprs_adata.var = ctrl_adata.var.copy()
     combined_adata = ad.concat([ctrl_adata, exprs_adata], join="outer")
 
-    combined_adata.obs["_de_group"] = np.where(combined_adata.obs[perturbation_col] == control_label, "control", "pert")
+    combined_adata.obs["_de_group"] = pd.Categorical(
+        np.where(
+            combined_adata.obs[perturbation_col] == control_label,
+            "control",
+            "pert",
+        ),
+        categories=["control", "pert"],
+    )
 
     # perform DE analysis
     sc.tl.rank_genes_groups(
@@ -402,6 +413,7 @@ def compute_differential_expression_metrics_by_group(
     gt_groups: Dict[str, np.ndarray],
     ctrl_adata: ad.AnnData,
     fdr=0.05,
+    debug: bool = False
 ):
     """
     Compute differential expression metrics for each condition.
@@ -425,7 +437,8 @@ def compute_differential_expression_metrics_by_group(
         gts = gt_groups[condition]
 
         if preds.min() < 0:
-            print(f"Warning: Negative values found in predictions for condition '{condition}'. Minimum value: {preds.min()}. Clipping to zero.")
+            if debug:
+                print(f"[Eval] Warning: Negative values found in predictions for condition '{condition}'. Minimum value: {preds.min()}. Clipping to zero.")
             preds = np.clip(preds, a_min=0, a_max=None)
 
         # 0. Compute differential expression results for the ground truth and predicted data.
@@ -678,6 +691,7 @@ def compute_perturbation_metrics(
     fdr=0.05,
     neighborhood_k=5,
     top_deg=100,
+    debug: bool = False,
 ):
     pred_groups, gt_groups = _group_results_by_condition(
         preds,
@@ -690,18 +704,20 @@ def compute_perturbation_metrics(
     pred_groups = {cond: group for cond, group in pred_groups.items() if "control" not in cond}
     gt_groups = {cond: group for cond, group in gt_groups.items() if "control" not in cond}
 
-    for cond, group in pred_groups.items():
-        print(f"Condition: {cond}, shape of samples: {group.shape}\n")
+    if debug:
+        for cond, group in pred_groups.items():
+            print(f"[Eval] Condition: {cond}, shape of samples: {group.shape}\n")
 
-    print(f"Number of conditions: {len(pred_groups)}")
+    print(f"[Eval] Number of conditions: {len(pred_groups)}")
 
-    print(f"Computing expression fidelity metrics by group...")
+    print(f"[Eval] Computing expression fidelity metrics by group...")
     expression_metrics_by_group = compute_expression_fidelity_metrics_by_group(
         pred_groups,
         gt_groups,
         ctrl_adata,
         fdr=fdr,
-        top_deg=top_deg
+        top_deg=top_deg,
+        debug=debug
     )
     # Overall metrics averaged across conditions
     expression_metrics = {}
@@ -715,12 +731,13 @@ def compute_perturbation_metrics(
     for k in expression_metrics:
         expression_metrics[k] = np.mean(expression_metrics[k])
 
-    print(f"Computing differential expression metrics by group...")
+    print(f"[Eval] Computing differential expression metrics by group...")
     de_metrics_by_group = compute_differential_expression_metrics_by_group(
         pred_groups,
         gt_groups,
         ctrl_adata,
         fdr=fdr,
+        debug=debug,
     )
     # Overall DE metrics averaged across conditions
     de_metrics = {}
@@ -734,7 +751,7 @@ def compute_perturbation_metrics(
     for k in de_metrics:
         de_metrics[k] = np.mean(de_metrics[k])
 
-    print(f"Computing perturbation discrimination metrics by group...")
+    print(f"[Eval] Computing perturbation discrimination metrics by group...")
     discrimination_metrics = compute_structure_metrics(
         pred_groups,
         gt_groups,

@@ -1,31 +1,25 @@
 import argparse
 import json
+import random
 import logging
 import os
+from tqdm import tqdm
+
+from typing import Dict, List, Tuple
+from dataclasses import asdict
 
 import numpy as np
 import torch
 import anndata as ad
 import perturb_datasets
-from tqdm import tqdm
 
-from typing import Dict, List, Tuple
-import scanpy as sc
-from scipy.stats import pearsonr, spearmanr
-from scipy.spatial.distance import pdist
-
-from nanomirrors.auto import AutoModel, AutoInputEncoder
+from nanomirrors.auto import AutoTrainerForPerturbationResponsePrediction
 
 MODEL_CHOICES = ["scGPT_human", 
                  "State", 
                  "Geneformer-V2-104M", 
                  "Geneformer-V1-10M"]
-
-PERTURBATION_METHODS = [
-    "CRISPRi",
-    "CRISPRa",
-    "CRISPR-Cas9",
-]
+DATASETS_CHOICES = ["adamson2016"]
 
 def get_train_val_test_data(adata: ad.AnnData, split_col: str = "split"):
     train_data = adata[(adata.obs[split_col] == "train") | (adata.obs[split_col] == "control")]
@@ -33,6 +27,16 @@ def get_train_val_test_data(adata: ad.AnnData, split_col: str = "split"):
     test_data = adata[(adata.obs[split_col] == "test") | (adata.obs[split_col] == "control")]
 
     return train_data, val_data, test_data
+
+def seed_everything(seed: int):
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def log(message, logger=None):
     if logger:
@@ -47,12 +51,10 @@ if __name__ == "__main__":
     parser.add_argument("--input_name", type=str, default="adamson2016", help="Name of the input dataset.", choices=DATASETS_CHOICES)
 
     parser.add_argument("--model", type=str, choices=MODEL_CHOICES, default="State", help="Type of model to train.")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training and evaluation.")
+    parser.add_argument("--batch_size", type=int, help="Batch size for training and evaluation.")
 
-    parser.add_argument("--cell_covariates", type=list, default=[], help="list of cell covariates, e.g., ['batch', 'cell_type']")
-    parser.add_argument("--cell_set_size", type=int, default=64, help="Cell set size for the model.")
+    parser.add_argument("--cell_set_size", type=int, help="Cell set size for the model.")
     parser.add_argument("--use_multi_hot", action="store_true", help="Use multi-hot encoding for perturbations.")
-    parser.add_argument("--use_pert_features", action="store_true", help="Use perturbation features for encoding.")
 
     parser.add_argument("--mode", type=str, choices=["train", "test"], default="train", help="Mode to run the script in.")
     
@@ -63,23 +65,12 @@ if __name__ == "__main__":
         
     args = parser.parse_args()
 
-    if args.model in ['state']:
-        if not args.use_multi_hot and not args.use_pert_features:
-            raise ValueError("At least one of --use_multi_hot or --use_pert_features must be specified.")
-        if args.use_multi_hot and args.use_pert_features:
-            print(f"[WARNING] Both --use_multi_hot and --use_pert_features were specified. Disabling --use_pert_features.")
-            args.use_pert_features = False
-    
-
     seed_everything(args.seed)
 
     '''
     Setup logging and output directories
     '''
-    if args.use_pert_features:
-        args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}-pert_features"
-    else:
-        args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}-multi_hot"
+    args.save_dir = f"{args.save_root}/{args.input_name}/{args.model}"
     os.makedirs(args.save_dir, exist_ok=True)
 
     logger = None
@@ -106,48 +97,43 @@ if __name__ == "__main__":
     num_train_perturbations = len([x for x in train_data.obs['perturbation'].unique().tolist() if x != 'control'])
     num_val_perturbations = len([x for x in val_data.obs['perturbation'].unique().tolist() if x != 'control'])
     num_test_perturbations = len([x for x in test_data.obs['perturbation'].unique().tolist() if x != 'control'])
-    total_perturbations = num_train_perturbations + num_val_perturbations + num_test_perturbations
+    
     n_genes = train_data.shape[1]
     
     '''
-    Initialize the model and trainer
+    Initialize the model, trainer config and trainer
     '''
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
     if torch.backends.mps.is_available():
         device = torch.device("mps")
 
-    model = AutoModel.from_pretrained(args.model)
-    model = model.to(device)
-
-    # TODO: pass set_covariates from dataset
-    perturbation_vocab = data.obs['perturbation'].unique().tolist()
-    trainer = AutoTrainerForPerturbationResponsePrediction(
-        model=model,
-        train_data=train_data,
-        val_data=val_data,
-        test_data=test_data,
-        batch_size=args.batch_size,
+    # Override default trainer config, model config if supplied via args.
+    model_config_params = {}
+    trainer_config_params = {}
+    if args.cell_set_size is not None:
+        model_config_params = {"cell_set_size": args.cell_set_size}
+    if args.batch_size is not None:
+        trainer_config_params = {"batch_size": args.batch_size}
+        
+    trainer = AutoTrainerForPerturbationResponsePrediction.from_model(
+        model_name=args.model,
+        n_genes=n_genes,
+        trainer_config_params=trainer_config_params,
+        model_config_params=model_config_params,
         device=device,
-        perturbation_vocab=perturbation_vocab,
-        covariates=args.cell_covariates,
         logger=logger,
         save_dir=args.save_dir,
     )
-    # trainer_config = StateTrainerConfig(batch_size=args.batch_size)
-    # trainer = StateTrainerForPerturbationResponsePrediction(
-    #     model=model,
-    #     train_data=train_data,
-    #     val_data=val_data,
-    #     test_data=test_data,
-    #     config=trainer_config,
-    #     device=device,
-    #     perturbation_vocab=data.obs['perturbation'].unique().tolist(),
-    #     set_covariates=None,
-    #     logger=logger,
-    #     save_dir=args.save_dir,
-    # )
+
+    print("Trainer Config: ", asdict(trainer.config))
+    print("Model Config: ", asdict((trainer.model.config)))
+    print("Device: ", device)
+
     if args.mode == "train":
-        history = trainer.train(checkpoint_path=f"{args.save_dir}/best_model.pt", debug=args.debug)
+        history = trainer.train(train_data=train_data, 
+                                val_data=val_data, 
+                                checkpoint_path=f"{args.save_dir}/best_model.pt", 
+                                debug=args.debug)
 
         # Save the training history.
         if args.save_dir:
@@ -159,7 +145,7 @@ if __name__ == "__main__":
     '''
     Evaluate the model on the test data
     '''
-    test_loss, test_eval_results, preds, gts, perturbations, covariates = trainer.test(debug=args.debug)
+    test_loss, test_eval_results, preds, gts, perturbations, covariates = trainer.test(data=test_data, debug=args.debug)
 
     # Save evaluation results.
     np.savez(f"{args.save_dir}/eval_results.npz", 

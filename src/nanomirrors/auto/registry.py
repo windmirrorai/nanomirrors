@@ -26,12 +26,18 @@ _CHECKPOINTS = {
     "scGPT_human": "scgpt",
     "Geneformer-V2-104M": "geneformer",
     "Geneformer-V1-10M": "geneformer",
-    "StateTransition": "state",
+    "State": "state",
 }
 
+
+'''
+Task-specific model, input encoder, and trainer implementations.
+'''
 _TASK_MODELS = {
     "perturbation_response_prediction": {
         "scgpt": "scGPTForPerturbationResponsePrediction",
+        "geneformer": "GeneformerForPerturbationResponsePrediction",
+        "state": "StateForPerturbationResponsePrediction",
     },
 }
 
@@ -44,6 +50,22 @@ _TASK_INPUT_ENCODERS = {
     "perturbation_response_prediction": {
         "scgpt": "scGPTInputEncoderForPerturbation",
         "geneformer": "GeneformerInputEncoderForPerturbation",
+    },
+}
+
+_TASK_TRAINER_CONFIGS = {
+    "perturbation_response_prediction": {
+        "scgpt": "scGPTTrainerConfig",
+        "geneformer": "GeneformerTrainerConfig",
+        "state": "StateTrainerConfig",
+    },
+}
+
+_TASK_TRAINERS = {
+    "perturbation_response_prediction": {
+        "scgpt": "scGPTTrainerForPerturbationResponsePrediction",
+        "geneformer": "GeneformerTrainerForPerturbationResponsePrediction",
+        "state": "StateTrainerForPerturbationResponsePrediction",
     },
 }
 
@@ -100,6 +122,46 @@ def resolve_class(model_name: str,
                     f"Supported checkpoints: {supported}"
                 )
             class_name = implementations[family_name]
+    elif component == "trainer_config":
+        module_name = f"training_{family.module}"
+        if task_name is None:
+            raise ValueError("Task name must be specified for trainer_config resolution.")
+        implementations = _TASK_TRAINER_CONFIGS.get(task_name)
+        if implementations is None:
+            raise ValueError(
+                f"Unsupported trainer_config task: {task_name}. "
+                f"Available tasks: {list(_TASK_TRAINER_CONFIGS.keys())}"
+            )
+        if family_name not in implementations:
+            supported = [
+                name for name, family_key in _CHECKPOINTS.items()
+                if family_key in implementations
+            ]
+            raise ValueError(
+                f"Checkpoint {model_name} has no trainer_config for task {task_name}. "
+                f"Supported checkpoints: {supported}"
+            )
+        class_name = implementations[family_name]
+    elif component == "trainer":
+        module_name = f"training_{family.module}"
+        if task_name is None:
+            raise ValueError("Task name must be specified for trainer resolution.")
+        implementations = _TASK_TRAINERS.get(task_name)
+        if implementations is None:
+            raise ValueError(
+                f"Unsupported trainer task: {task_name}. "
+                f"Available tasks: {list(_TASK_TRAINERS.keys())}"
+            )
+        if family_name not in implementations:
+            supported = [
+                name for name, family_key in _CHECKPOINTS.items()
+                if family_key in implementations
+            ]
+            raise ValueError(
+                f"Checkpoint {model_name} has no trainer for task {task_name}. "
+                f"Supported checkpoints: {supported}"
+            )
+        class_name = implementations[family_name]
     else:
         raise ValueError(f"Unknown component: {component}")
 

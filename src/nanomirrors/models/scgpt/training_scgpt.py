@@ -28,61 +28,29 @@ class scGPTTrainerConfig:
     early_stopping_patience: int = 5 # Number of validation steps to wait before early stopping
     gradient_clip_norm: float = 1.0
 
-    val_every: int = 1000
-    log_every: int = 100
+    val_every: int = 10
+    log_every: int = 50
 
 class scGPTTrainerForPerturbationResponsePrediction:
 
     def __init__(self, 
                  model: nn.Module,
-                 train_data: ad.AnnData | None,
-                 val_data: ad.AnnData | None,
-                 test_data: ad.AnnData | None,
                  config: scGPTTrainerConfig,
                  device: torch.device,
-                 pair_covariates: list[str] | None = None,
                  logger: Optional[logging.Logger] = None,
                  save_dir: str = "./"):
         self.model = model
-        self.train_data = train_data
-        self.val_data = val_data
-        self.test_data = test_data
         self.config = config
         self.device = device
-        self.pair_covariates = pair_covariates
+        self.train_input_encoder = None
+        self.eval_input_encoder = None
         self.logger = logger
         self.save_dir = save_dir
-        
-        # Initialize the model-task specific dataset, dataloaders.
-        if train_data is not None:
-            self.train_dataset = PairedPerturbationDataset(train_data, pair_covariates=pair_covariates, include_ctrl_ctrl_pairs=False)
-            self.train_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True)
-        
-        if val_data is not None:
-            self.val_dataset = PairedPerturbationDataset(val_data, pair_covariates=pair_covariates, include_ctrl_ctrl_pairs=False)
-            self.val_loader = DataLoader(self.val_dataset, batch_size=self.config.batch_size, shuffle=False)
-        
-        if test_data is not None:
-            self.test_dataset = PairedPerturbationDataset(test_data, pair_covariates=pair_covariates, include_ctrl_ctrl_pairs=False)
-            self.test_loader = DataLoader(self.test_dataset, batch_size=self.config.batch_size, shuffle=False)
-        
-        # Initialize the input encoder(s).
-        self.train_input_encoder = scGPTInputEncoderForPerturbation(
-            gene_names = train_data.var['gene_symbol'].tolist(),
-            model_name = model.config.model_name,
-            truncate_to_max_length=True,
-        )
-        self.eval_input_encoder = scGPTInputEncoderForPerturbation(
-            gene_names = train_data.var['gene_symbol'].tolist(),
-            model_name = model.config.model_name,
-            truncate_to_max_length=False,
-        )
         
         self.loss_fn = nn.MSELoss(reduction="mean")
         self.optimizer = torch.optim.Adam(self.model.parameters(), 
                                                   lr=self.config.lr)
-        scheduler_step_size = len(self.train_loader) # scGPT step decay LR per one epoch.
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=scheduler_step_size, gamma=config.scheduler_gamma)
+        self.scheduler = None
 
         self.amp = config.amp
         self.amp_dtype = (
@@ -228,18 +196,70 @@ class scGPTTrainerForPerturbationResponsePrediction:
 
         return loss.detach().item(), outputs, encoded_batch["targets"]
 
-    def train(self, checkpoint_path: Optional[str] = None, debug: bool = False) -> Dict[str, List[Dict[str, float]]]:
+    def train(self,
+              train_data: ad.AnnData,
+              val_data: Optional[ad.AnnData] = None, 
+              checkpoint_path: Optional[str] = None, 
+              debug: bool = False) -> Dict[str, List[Dict[str, float]]]:
+
+        if "covariates" not in train_data.uns:
+            raise ValueError("Covariates not found in  `train_data.uns['covariates']`. Please ensure that the training data contains covariates.")
+        if val_data is not None and "covariates" not in val_data.uns:
+            raise ValueError("Covariates not found in  `val_data.uns['covariates']`. Please ensure that the validation data contains covariates.")      
+
+
+        train_dataset = PairedPerturbationDataset(train_data, 
+                                                       pair_covariates=train_data.uns["covariates"], 
+                                                       include_ctrl_ctrl_pairs=True)
+        train_loader = DataLoader(train_dataset, batch_size=self.config.batch_size, shuffle=True)
+        
+        if val_data is not None:
+            val_dataset = PairedPerturbationDataset(val_data, 
+                                                         pair_covariates=val_data.uns["covariates"], 
+                                                         include_ctrl_ctrl_pairs=False)
+            val_loader = DataLoader(val_dataset, batch_size=self.config.batch_size, shuffle=False)
+
+        # Initialize the input encoder(s).
+        self.train_input_encoder = scGPTInputEncoderForPerturbation(
+            gene_names = train_data.var['gene_symbol'].tolist(),
+            model_name = self.model.config.model_name,
+            truncate_to_max_length=True,
+        )
+        self.eval_input_encoder = scGPTInputEncoderForPerturbation(
+            gene_names = train_data.var['gene_symbol'].tolist(),
+            model_name = self.model.config.model_name,
+            truncate_to_max_length=False,
+        )
+
+        scheduler_step_size = len(train_loader) # scGPT step decay LR per one epoch.
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 
+                                                         step_size=scheduler_step_size, 
+                                                         gamma=self.config.scheduler_gamma)
+        
         train_losses = []
         val_losses = []
         metrics_history = []
 
         self.best_val_metric = float("-inf")
+        metric_category= "expression"
+        metric_name = "pearson_delta_all_genes"
         self.patience = 0
-        
-        while self.global_step < self.config.max_steps:   
-            for batch in tqdm(self.train_loader, desc=f"Training Step {self.global_step}", leave=False):
+
+        stop_training = False
+        pbar = tqdm(
+            total=self.config.max_steps,
+            initial=self.global_step,
+            desc="Training",
+            unit="step",
+        )
+        while not stop_training:
+            for batch in train_loader:
+                prev_global_step = self.global_step
                 loss = self.train_step(batch, debug=debug)
                 train_losses.append({"step": self.global_step, "train_loss": loss})
+
+                pbar.update(self.global_step - prev_global_step)
+                pbar.set_postfix(loss=f"{loss:.4f}")
 
                 if self.global_step % self.config.log_every == 0 or self.global_step == 1:
                     self._log(f"Step {self.global_step} | Train Loss: {loss:.4f}")
@@ -248,37 +268,38 @@ class scGPTTrainerForPerturbationResponsePrediction:
                 Perform validation every self.config.val_every steps.
                 '''
                 if self.global_step % self.config.val_every == 0:
-                    if self.val_loader is None:
+                    if val_loader is None:
                         self._log("[Warning] Validation loader is not provided. No checkpoint will be saved.")
-                        continue
-
-                    val_loss, val_results, _, _, _, _ = self.evaluate(loader=self.val_loader, debug=debug)
-                    val_losses.append({"step": self.global_step, "val_loss": val_loss})
-                    metrics_history.append({"step": self.global_step, **val_results}) 
-
-                    # Log the current step and validation results.
-                    self._log(f"Step {self.global_step}")
-                    for k, v in val_results.items():
-                        self._log(f"{k}: {v}")
-
-                    # Save best model based on the specified validation metric.
-                    metric_category= "expression"
-                    metric_name = "pearson_delta_all_genes"
-                    if val_results[metric_category][metric_name] > self.best_val_metric:
-                        self.best_val_metric = val_results[metric_category][metric_name]
-                        self.save_checkpoint(checkpoint_path)
-                        self._log(f"New best model saved with {metric_name}: {self.best_val_metric:.4f}")
-                        self.patience = 0
                     else:
-                        self.patience += 1
-                        if self.patience >= self.config.early_stopping_patience:
-                            self._log(f"Early stopping triggered after {self.global_step} steps.")
-                            break
-                            
+                        val_loss, val_results, _, _, _, _ = self.evaluate(loader=val_loader, debug=debug)
+                        val_losses.append({"step": self.global_step, "val_loss": val_loss})
+                        metrics_history.append({"step": self.global_step, **val_results}) 
+
+                        # Log the current step and validation results.
+                        self._log(f"Step {self.global_step}")
+                        for k, v in val_results.items():
+                            self._log(f"{k}: {v}")
+
+                        # Save best model based on the specified validation metric.
+                        if val_results[metric_category][metric_name] > self.best_val_metric:
+                            self.best_val_metric = val_results[metric_category][metric_name]
+                            self.save_checkpoint(checkpoint_path)
+                            self._log(f"New best model saved with {metric_name}: {self.best_val_metric:.4f}")
+                            self.patience = 0
+                        else:
+                            self.patience += 1
+                            if self.patience >= self.config.early_stopping_patience:
+                                self._log(f"Stopping training at step {self.global_step} due to early stopping.")
+                                stop_training = True
+                                break
+
                 if self.global_step >= self.config.max_steps:
                     self._log(f"Maximum training steps reached: {self.global_step}, stopping training.")
+                    stop_training = True
                     break
         
+        pbar.close()
+
         return {
             "train_losses": train_losses,
             "val_losses": val_losses,
@@ -333,11 +354,22 @@ class scGPTTrainerForPerturbationResponsePrediction:
                                                     )
         return eval_loss, eval_results, preds, gts, perturbations, covariates
     
-    def test(self, debug=False):
-        return self.evaluate(self.test_loader, debug=debug)
+    def test(self, data: ad.AnnData, debug=False):
+        if 'covariates' not in data.uns:
+            raise ValueError("The AnnData object must contain 'covariates' in its .uns attribute")
+            
+        dataset = PairedPerturbationDataset(data, pair_covariates=data.uns['covariates'], include_ctrl_ctrl_pairs=False)
+        test_loader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False)
 
-    def train_validate(self, debug=False):
-        return self.evaluate(self.train_loader, debug=debug)
+        if not hasattr(self, "eval_input_encoder") or self.eval_input_encoder is None:
+            # Initialize the test input encoder, in case it has not been initialized during training.
+            self.eval_input_encoder = scGPTInputEncoderForPerturbation(
+                gene_names = data.var['gene_symbol'].tolist(),
+                model_name = self.model.config.model_name,
+                truncate_to_max_length = False,
+            )
+        
+        return self.evaluate(loader=test_loader, debug=debug)
 
     def save_checkpoint(self, path: str):
         path = Path(path)
@@ -347,14 +379,17 @@ class scGPTTrainerForPerturbationResponsePrediction:
             "optimizer": self.optimizer.state_dict(),
             "global_step": self.global_step,
             "model_config": asdict(self.model.config),
-            "training_config": asdict(self.config),
+            "trainer_config": asdict(self.config),
         }, path)
 
     def load_checkpoint(self, path: str):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         if checkpoint["model_config"] != asdict(self.model.config):
-            raise ValueError("Checkpoint model configuration does not match this model")
+            print(
+                "[Warning] Checkpoint model configuration does not match this model. "
+                "This may lead to unexpected behavior if the model configuration differs from the checkpoint."
+            )
         self.model.load_state_dict(checkpoint["model"])
         self.optimizer.load_state_dict(checkpoint["optimizer"])
         self.global_step = checkpoint["global_step"]
-    
+        self.config = scGPTTrainerConfig(**checkpoint["trainer_config"])
