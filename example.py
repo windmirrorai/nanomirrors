@@ -13,5 +13,8 @@ model.eval()
 input_encoder = AutoInputEncoder.from_pretrained(model_name, gene_names=genes)
 inputs = input_encoder.encode({"exprs": exprs})
 
-embeddings = model.encode_cell(**inputs)
-print(embeddings.shape)
+cell_embeddings = model.encode_cell(**inputs)
+gene_embeddings = model.encode_gene(**inputs)
+    
+print(f"Cell embeddings shape: {cell_embeddings.shape}")
+print(f"Gene embeddings shape: {gene_embeddings.shape}")

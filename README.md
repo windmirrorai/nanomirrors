@@ -64,32 +64,82 @@ model.eval()
 input_encoder = AutoInputEncoder.from_pretrained(model_name, gene_names=genes)
 inputs = input_encoder.encode({"exprs": exprs})
 
-embeddings = model.encode_cell(**inputs)
+cell_embeddings = model.encode_cell(**inputs) # (N, D)
+gene_embeddings = model.encode_gene(**inputs) # (N, G, D)
 
 ```
 
-### (coming soon) Train for perturbation response prediction
+## Perturbation Response Prediction (PRP) task
 
 ```python
-config = StateConfig(input_dim=2000
-                     output_dim=2000, 
-                     pert_dim=2024)
-model = StateModel(config)
+from nanomirrors.data import load_dataset
+from nanomirrors.auto import AutoTrainerForPerturbationResponsePrediction
 
-trainer_config = StateTrainerConfig()
-trainer = StateTrainerForPerturbationResponsePrediction(model, train_data, trainer_config)
-trainer.train(checkpoint_path="./run")
+data = load_dataset("adamson2016") # load preprocessed perturbation dataset from HF
+
+# Automatically intialize model, configs, and corresponding trainer 
+trainer = AutoTrainerForPerturbationResponsePrediction.from_model(
+    model_name="State",
+    n_genes=2000, # number of genes in data
+    device="cuda"
+)
+
+history = trainer.train(train_data=data, val_data=None, checkpoint_path="./run")
+
 ```
 
-## Supported models
+## Bring your own data
 
-| Model | Paper | Inference | Train | Verified vs. original | Weights license |
-|---|---|:---:|:---:|---|---|
-| **scGPT** | [Cui et al., 2024](https://www.nature.com/articles/s41592-024-02201-0) | ✅ | ✅ (PRP) | equivalent, 1.38× faster | Inherits [scGPT license](https://github.com/bowang-lab/scGPT) |
-| **Geneformer** | [Theodoris et al., 2023](https://www.nature.com/articles/s41586-023-06139-9) | ✅ | ✅ (PRP) | equivalent | Inherits [Geneformer license](https://huggingface.co/ctheodoris/Geneformer) |
-| **State** | [Adduri et al., 2025](https://www.cell.com/cell/fulltext/S0092-8674(26)00921-9) | ✅ | ✅ (PRP) | equivalent | Inherits [State license](https://github.com/ArcInstitute/state) |
+Use an `AnnData` object with **cells as rows and genes as columns**, plus these annotations:
 
-Want a model added? [Open an issue](../../issues).
+| Field | Contents |
+|---|---|
+| `adata.var["gene_symbol"]` | Gene symbols, e.g. `"TP53"` |
+| `adata.var["gene_ensembl"]` | Ensembl gene IDs, e.g. `"ENSG00000141510"` |
+| `adata.uns["organism"]` | Organism, e.g. `"human"` |
+
+For **perturbation response prediction**, also include:
+
+| Field | Contents |
+|---|---|
+| `adata.obs["perturbation"]` | Target gene, `"+"`-joined targets such as `"TP53+MDM2"`, or `"control"` |
+| `adata.obs["is_control"]` | Boolean indicating whether each cell is a control |
+| `adata.uns["perturbation_method"]` | `"CRISPRi"`, `"CRISPRa"`, or `"CRISPR-Cas9"` |
+| `adata.uns["covariates"]` | List of covariate column names in `.obs`, e.g. `"[cell_type]"`or `[]` if no cell covariates. Covariates influences cells grouping in training. |
+
+```python
+# Assuming adata.obs["perturbation"], adata.var["gene_ensembl"] and adata.var["gene_symbols"] already populated:
+adata.uns["organism"] = "human"
+adata.uns["perturbation_method"] = "CRISPRi"
+adata.uns["covariates"] = ["cell_type"]  # Requires adata.obs["cell_type"]
+
+adata.obs["is_control"] = adata.obs["perturbation"].eq("control")
+```
+
+Include control cells and at least one non-control perturbation, with no missing perturbation labels. Example: [preprocessed adamson perturbation h5ad](https://huggingface.co/datasets/windmirror/perturb_datasets/blob/main/adamson2016/processed.h5ad). 
+
+## Supported models and tasks
+
+Use the model identifier below when loading a model or trainer.
+
+| Model | Model identifier | Embedding | PRP |
+|---|---|:---:|:---:|
+| **scGPT** | `"scGPT_human"` | ✅ | ✅ |
+| **Geneformer V2** | `"Geneformer-V2-104M"` | ✅ | ✅ |
+| **Geneformer V1** | `"Geneformer-V1-10M"` | ✅ | ✅ |
+| **State** | `"State"` | — | ✅ |
+
+**PRP** = perturbation response prediction. 
+
+### References and verification
+
+| Model | Paper | Verified vs. original | Weights license |
+|---|---|---|---|
+| **scGPT** | [Cui et al., 2024](https://www.nature.com/articles/s41592-024-02201-0) | Equivalent; 1.38× faster in our benchmark | [scGPT license](https://github.com/bowang-lab/scGPT) |
+| **Geneformer** | [Theodoris et al., 2023](https://www.nature.com/articles/s41586-023-06139-9) | Equivalent | [Geneformer license](https://huggingface.co/ctheodoris/Geneformer) |
+| **State** | [State paper](https://www.cell.com/cell/fulltext/S0092-8674%2826%2900921-9) | Equivalent | [State license](https://github.com/ArcInstitute/state) |
+
+#### Want another model or task supported? [Open an issue](https://github.com/windmirrorai/nanomirrors/issues).
 
 <!-- ## Design
 
