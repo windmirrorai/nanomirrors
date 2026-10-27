@@ -25,7 +25,7 @@ def _group_results_by_condition(
         preds: Predicted values, shape (n_cells, n_genes).
         gts: Ground truth values, shape (n_cells, n_genes).
         perturbations: List of perturbation labels corresponding to each sample.
-        covariates: List of dictionaries containing covariate information for each sample, 
+        covariates: List of dictionaries containing covariate information for each sample, excluding the `perturbation`.
         e.g. [{"batch": 1, "cell_line": "A"}, {"batch": 2, "cell_line": "B"}, ...].
 
     Returns:
@@ -146,6 +146,8 @@ def compute_expression_fidelity_metrics_by_group(
     gt_groups: Dict[str, np.ndarray],
     ctrl_adata: ad.AnnData,
     fdr=0.05,
+    top_deg=100,
+    debug=False,
 ) -> Dict[str, Dict[str, float]]:
     """
     Compute expression fidelity metrics for the given predicted and ground truth groups.
@@ -155,6 +157,7 @@ def compute_expression_fidelity_metrics_by_group(
         gt_groups: Dictionary mapping each condition to the corresponding ground truth values.
         perturbations: List of perturbation labels corresponding to each sample.
         covariates: List of dictionaries containing covariate information for each sample.
+        top_deg: Number of top DE genes to consider for top DE gene metrics.
         ctrl_adata: Control AnnData object.
         fdr: False discovery rate threshold.
 
@@ -172,22 +175,49 @@ def compute_expression_fidelity_metrics_by_group(
         preds = pred_groups[condition]
         gts = gt_groups[condition]
 
+        ctrl_mean = np.asarray(ctrl_adata.X.mean(axis=0)).flatten()
+        preds_delta = preds.mean(axis=0) - ctrl_mean
+        gts_delta = gts.mean(axis=0) - ctrl_mean
+
         # 1. Compute metrics for all genes
         mse_all_genes = mse(preds, gts)
-        pearson_delta_all_genes = pearsonr(preds.mean(axis=0), gts.mean(axis=0))[0]
+        pearson_delta_all_genes = pearsonr(preds_delta, gts_delta)[0]
 
         # 2. Compute metrics for DE genes
         de_result, de_result_significant = get_de_results_by_condition(ctrl_adata, condition, fdr=fdr)
         de_genes_sig = de_result_significant["gene"]
-        print(f"Number of significant DE genes: {len(de_genes_sig)}")
+        if debug:
+            print(f"[Eval] Number of significant DE genes: {len(de_genes_sig)}")
         de_genes_sig_mask = ctrl_adata.var_names.isin(de_genes_sig)
+        cond_top_deg = min(top_deg, len(de_genes_sig))
+        top_de_genes = de_result_significant.sort_values("pvals_adj").head(cond_top_deg)["gene"]
+        top_de_genes_mask = ctrl_adata.var_names.isin(top_de_genes)
+
+        if len(de_genes_sig) == 0:
+            print(f"[Warning] No significant DE genes found for condition {condition}. Skipping DE gene metrics.")
+            continue
 
         preds_de = preds[:, de_genes_sig_mask]
         gts_de = gts[:, de_genes_sig_mask]
-        print(f"preds_de shape: {preds_de.shape}, gts_de shape: {gts_de.shape}")
+        if debug:
+            print(f"[Eval] preds_de shape: {preds_de.shape}, gts_de shape: {gts_de.shape}")
         
         mse_de_genes = mse(preds_de, gts_de)
-        pearson_delta_de_genes = pearsonr(preds_de.mean(axis=0), gts_de.mean(axis=0))[0]
+        pearson_delta_de_genes = pearsonr(
+            preds_delta[de_genes_sig_mask], 
+            gts_delta[de_genes_sig_mask]
+        )[0]
+
+        preds_top_de = preds[:, top_de_genes_mask]
+        gts_top_de = gts[:, top_de_genes_mask]
+        if debug:
+            print(f"[Eval] preds_top_de shape: {preds_top_de.shape}, gts_top_de shape: {gts_top_de.shape}")
+        
+        mse_top_de_genes = mse(preds_top_de, gts_top_de)
+        pearson_delta_top_de_genes = pearsonr(
+            preds_delta[top_de_genes_mask], 
+            gts_delta[top_de_genes_mask]
+        )[0]
 
         # Compute energy distance
         e_dist = energy_distance(preds, gts)
@@ -198,6 +228,8 @@ def compute_expression_fidelity_metrics_by_group(
             "mse_de_genes": float(mse_de_genes),
             "pearson_delta_de_genes": float(pearson_delta_de_genes),
             "energy_distance": float(e_dist),
+            "mse_top_de_genes": float(mse_top_de_genes),
+            "pearson_delta_top_de_genes": float(pearson_delta_top_de_genes),
         }
 
     return metrics_by_group
@@ -236,7 +268,14 @@ def compute_differential_expression(
     exprs_adata.var = ctrl_adata.var.copy()
     combined_adata = ad.concat([ctrl_adata, exprs_adata], join="outer")
 
-    combined_adata.obs["_de_group"] = np.where(combined_adata.obs[perturbation_col] == control_label, "control", "pert")
+    combined_adata.obs["_de_group"] = pd.Categorical(
+        np.where(
+            combined_adata.obs[perturbation_col] == control_label,
+            "control",
+            "pert",
+        ),
+        categories=["control", "pert"],
+    )
 
     # perform DE analysis
     sc.tl.rank_genes_groups(
@@ -260,6 +299,7 @@ def compute_differential_expression(
 def deg_set_overlap(pred_de_result_df: pd.DataFrame, gt_de_result_df: pd.DataFrame) -> float:
     """
     Compute the overlap between the predicted and ground truth sets of differentially expressed genes.
+    Essentially, DEG Recall@N, where N is the number of ground truth DE genes.
 
     Args:
         pred_de_result_df (pd.DataFrame): Predicted DE results DataFrame.
@@ -373,6 +413,7 @@ def compute_differential_expression_metrics_by_group(
     gt_groups: Dict[str, np.ndarray],
     ctrl_adata: ad.AnnData,
     fdr=0.05,
+    debug: bool = False
 ):
     """
     Compute differential expression metrics for each condition.
@@ -395,6 +436,11 @@ def compute_differential_expression_metrics_by_group(
         preds = pred_groups[condition]
         gts = gt_groups[condition]
 
+        if preds.min() < 0:
+            if debug:
+                print(f"[Eval] Warning: Negative values found in predictions for condition '{condition}'. Minimum value: {preds.min()}. Clipping to zero.")
+            preds = np.clip(preds, a_min=0, a_max=None)
+
         # 0. Compute differential expression results for the ground truth and predicted data.
         gt_de_result, gt_de_result_sig= get_de_results_by_condition(ctrl_adata, condition, fdr=fdr)
         pred_de_result, pred_de_result_sig = compute_differential_expression(preds, ctrl_adata, fdr=fdr)
@@ -403,7 +449,7 @@ def compute_differential_expression_metrics_by_group(
         deg_overlap = deg_set_overlap(pred_de_result_sig, gt_de_result_sig)
 
         # 2, 3. Compute the log fold change Spearman correlation, direction agreement.
-        logfc_results = logfc_metrics(pred_de_result_sig, gt_de_result_sig)
+        logfc_results = logfc_metrics(pred_de_result, gt_de_result_sig)
         logfc_spearman_corr = logfc_results["logfc_spearman"]
         direction_agreement = logfc_results["direction_agreement"]
 
@@ -519,7 +565,7 @@ def global_distance_spearman(
     pred_groups: Dict[str, np.ndarray], 
     gt_groups: Dict[str, np.ndarray],
     distance_measure: Literal["pseudo_bulk", "energy_distance", "sinkhorn"] = "pseudo_bulk"
-) -> float:
+) -> Tuple[float, float, float, float]:
     """
     Compute the Spearman correlation of global distances between predicted and ground truth expression values.
 
@@ -528,16 +574,21 @@ def global_distance_spearman(
         gt_groups (Dict[str, np.ndarray]): A dictionary mapping condition to ground truth expression values.
 
     Returns:
-        float: Spearman correlation of global distances between predicted and ground truth expression values.
+        Tuple[float, float, float, float]: Spearman correlation, Spearman p-value, Pearson correlation, and
+         Pearson p-value of global distances between predicted and ground truth expression values.
     """
 
     pred_dists = _compute_group_pairwise_distances(pred_groups, distance_measure=distance_measure)
     gt_dists = _compute_group_pairwise_distances(gt_groups, distance_measure=distance_measure)
 
     # Compute Spearman correlation
-    spearman_corr, _ = spearmanr(pred_dists, gt_dists)
+    spearman_corr, spearman_pval = spearmanr(pred_dists, gt_dists)
 
-    return spearman_corr
+    # Compute Pearson correlation
+    pearson_corr, pearson_pval = pearsonr(pred_dists, gt_dists)
+
+
+    return spearman_corr, spearman_pval, pearson_corr, pearson_pval
 
 def local_neighborhood_precision(
     pred_groups: Dict[str, np.ndarray],
@@ -610,18 +661,23 @@ def compute_structure_metrics(
         Dict[str, float]: A dictionary mapping condition to the discrimination metric.
         - cds (float), [0,1]: Perturbation discrimination score for the condition.
         - global_distance_spearman (float), [-1,1]: Spearman correlation of global distances between predicted and ground truth expression values.
+        - global_distance_spearman_pval (float): P-value of the Spearman correlation.
         - mAP@k (float): Mean average precision at k for the perturbation structure metric.
     """
 
     cds = condition_discrimination_score(pred_groups, gt_groups, distance_measure=distance_measure)
 
-    global_dist_spearman = global_distance_spearman(pred_groups, gt_groups, distance_measure=distance_measure)
+    global_dist_results = global_distance_spearman(pred_groups, gt_groups, distance_measure=distance_measure)
+    global_dist_spearman, global_dist_spearman_pval, global_dist_pearson, global_dist_pearson_pval = global_dist_results
 
     map_at_k = local_neighborhood_precision(pred_groups, gt_groups, distance_measure=distance_measure, k=k)
 
     return {
         "cds": float(cds),
         "global_distance_spearman": float(global_dist_spearman),
+        "global_distance_spearman_pval": float(global_dist_spearman_pval),
+        "global_distance_pearson": float(global_dist_pearson),
+        "global_distance_pearson_pval": float(global_dist_pearson_pval),
         "mAP@k": float(map_at_k),
     }
 
@@ -633,7 +689,9 @@ def compute_perturbation_metrics(
     covariates: List[dict],
     ctrl_adata: ad.AnnData,
     fdr=0.05,
-    neighborhood_k=2,
+    neighborhood_k=5,
+    top_deg=100,
+    debug: bool = False,
 ):
     pred_groups, gt_groups = _group_results_by_condition(
         preds,
@@ -642,14 +700,24 @@ def compute_perturbation_metrics(
         covariates,
     )
 
-    for cond, group in pred_groups.items():
-        print(f"Condition: {cond}, shape of samples: {group.shape}\n")
+    # Remove control groups 
+    pred_groups = {cond: group for cond, group in pred_groups.items() if "control" not in cond}
+    gt_groups = {cond: group for cond, group in gt_groups.items() if "control" not in cond}
 
+    if debug:
+        for cond, group in pred_groups.items():
+            print(f"[Eval] Condition: {cond}, shape of samples: {group.shape}\n")
+
+    print(f"[Eval] Number of conditions: {len(pred_groups)}")
+
+    print(f"[Eval] Computing expression fidelity metrics by group...")
     expression_metrics_by_group = compute_expression_fidelity_metrics_by_group(
         pred_groups,
         gt_groups,
         ctrl_adata,
         fdr=fdr,
+        top_deg=top_deg,
+        debug=debug
     )
     # Overall metrics averaged across conditions
     expression_metrics = {}
@@ -663,11 +731,13 @@ def compute_perturbation_metrics(
     for k in expression_metrics:
         expression_metrics[k] = np.mean(expression_metrics[k])
 
+    print(f"[Eval] Computing differential expression metrics by group...")
     de_metrics_by_group = compute_differential_expression_metrics_by_group(
         pred_groups,
         gt_groups,
         ctrl_adata,
         fdr=fdr,
+        debug=debug,
     )
     # Overall DE metrics averaged across conditions
     de_metrics = {}
@@ -681,10 +751,11 @@ def compute_perturbation_metrics(
     for k in de_metrics:
         de_metrics[k] = np.mean(de_metrics[k])
 
+    print(f"[Eval] Computing perturbation discrimination metrics by group...")
     discrimination_metrics = compute_structure_metrics(
         pred_groups,
         gt_groups,
-        distance_measure="pseudo_bulk",
+        distance_measure="energy_distance",
         k=neighborhood_k,
     )
 

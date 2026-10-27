@@ -51,14 +51,14 @@ class GeneformerModel(nn.Module):
         return h # [B, L, H]
     
     @classmethod
-    def from_pretrained(cls, model_type="Geneformer-V2-104M"):
-        assert model_type in ["Geneformer-V2-104M", "Geneformer-V1-10M",], f"Unsupported model type {model_type}."
+    def from_pretrained(cls, model_name="Geneformer-V2-104M"):
+        assert model_name in ["Geneformer-V2-104M", "Geneformer-V1-10M",], f"Unsupported model type {model_name}."
         
-        config = GeneformerConfig.from_pretrained(model_type.lower())
+        config = GeneformerConfig.from_pretrained(model_name.lower())
         model = cls(config)
         
         model_path = hf_hub_download(repo_id="ctheodoris/Geneformer", 
-                                     filename=f"{model_type}/model.safetensors")
+                                     filename=f"{model_name}/model.safetensors")
         state_dict = load_file(model_path, device="cpu")
         model.bert.load_state_dict(state_dict, strict=False)
 
@@ -96,3 +96,16 @@ class GeneformerForPerturbationResponsePrediction(nn.Module):
         output = self.output_head(delta_hidden + ctrl_embeddings) # [B, n_genes]
 
         return output
+
+    @classmethod
+    def from_pretrained(cls, n_genes: int, model_name="Geneformer-V2-104M"):
+        base = GeneformerModel.from_pretrained(model_name)
+        model = cls(base.config, n_genes=n_genes)
+        model.geneformer = base
+
+        print(
+            f"Loaded Geneformer base weights, with {model.geneformer.get_num_params()/1e6:.2f}M parameters. "
+            f"Delta head randomly initialized with {sum(p.numel() for p in model.delta_head.parameters())/1e6:.2f}M parameters."
+        )
+
+        return model
