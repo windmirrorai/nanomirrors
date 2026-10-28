@@ -29,8 +29,8 @@ class StateTrainerConfig:
     gradient_clip_norm: float = 10.0
     early_stopping_patience: int = 40 # Number of validation steps with no improvement after which training will be stopped
 
-    val_every: int = 2
-    log_every: int = 100
+    val_every: int = 100
+    log_every: int = 20
 
 class StateTrainerForPerturbationResponsePrediction:
 

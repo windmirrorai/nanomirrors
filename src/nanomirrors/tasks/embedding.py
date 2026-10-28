@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from nanomirrors.data import CellDataset
 from nanomirrors.auto import AutoModel, AutoInputEncoder
-from nanomirrors.data.utils import convert_ensembl_to_symbol, convert_symbol_to_ensembl
+from nanomirrors.data.utils import add_gene_symbol_and_ensembl
 
 DEFAULT_INPUT_URL = "https://datasets.cellxgene.cziscience.com/d6761a21-e226-434f-9370-fbcc7e549aa0.h5ad"
 
@@ -17,7 +17,7 @@ MODEL_CHOICES = ["scGPT_human",
                  "Geneformer-V2-104M",
                  "Geneformer-V1-10M"]
 
-# !TODO: move this inside auto.
+# TODO: maybe move this mapping.
 MODEL2GENE_FORMAT = {
     "scGPT_human": "gene_symbol",
     "StateTransition": "gene_symbol",
@@ -30,10 +30,12 @@ if __name__ == "__main__":
     parser.add_argument("--input", type=str, required=False, help="Path to the local input .h5ad file.")
     parser.add_argument("--input_url", type=str, required=False, default=DEFAULT_INPUT_URL, help="URL to the input .h5ad file. Ignored if --input is provided.")
     parser.add_argument("--output", type=str, default="embeddings.npy", help="Path to save the output embeddings.")
+
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing the data.")
 
-    parser.add_argument("--model", type=str, choices=MODEL_CHOICES, default="Geneformer-V2-104M", help="Type of model to use for embedding.")
-
+    parser.add_argument("--model", type=str, choices=MODEL_CHOICES, default="scGPT_human", help="Type of model to use for embedding.")
+    parser.add_argument("--mode", type=str, choices=["cell", "gene"], default="cell", help="Mode of embedding: 'cell' for cell embeddings, 'gene' for gene embeddings.")
+    
     args = parser.parse_args()
 
     '''
@@ -51,40 +53,7 @@ if __name__ == "__main__":
     '''
     Ensure that both gene symbols and Ensembl IDs exist in the dataset.
     '''
-    print(f"Making sure both gene symbols and ensembl ids exist ...")
-    gene_ensembl_exists = False
-    gene_symbol_exists = False
-    if "gene_ensembl" in adata.var.columns:
-        gene_ensembl_exists = True
-    if "gene_symbol" in adata.var.columns:
-        gene_symbol_exists = True
-
-    organism = "human"
-    if not gene_ensembl_exists and not gene_symbol_exists:
-        adata.var_names_make_unique()
-        if adata.var_names[0].startswith("ENS"):
-            adata.var['gene_ensembl'] = adata.var_names
-            gene_lists = adata.var["gene_ensembl"].tolist()
-            ensembl_to_symbol = convert_ensembl_to_symbol(gene_lists, organism=organism)
-            adata.var["gene_symbol"] = adata.var["gene_ensembl"].map(ensembl_to_symbol)
-        else:
-            adata.var['gene_symbol'] = adata.var_names
-            gene_lists = adata.var["gene_symbol"].tolist()
-            symbol_to_ensembl = convert_symbol_to_ensembl(gene_lists, organism=organism)
-            adata.var["gene_ensembl"] = adata.var["gene_symbol"].map(symbol_to_ensembl)
-        gene_ensembl_exists = True
-        gene_symbol_exists = True
-    elif gene_ensembl_exists and not gene_symbol_exists:
-        gene_lists = adata.var["gene_ensembl"].tolist()
-        ensembl_to_symbol = convert_ensembl_to_symbol(gene_lists, organism=organism)
-        adata.var["gene_symbol"] = adata.var["gene_ensembl"].map(ensembl_to_symbol)
-        gene_symbol_exists = True
-    elif gene_symbol_exists and not gene_ensembl_exists:
-        gene_lists = adata.var["gene_symbol"].tolist()
-        symbol_to_ensembl = convert_symbol_to_ensembl(gene_lists, organism=organism)
-        adata.var["gene_ensembl"] = adata.var["gene_symbol"].map(symbol_to_ensembl)
-        gene_ensembl_exists = True
-    assert gene_ensembl_exists and gene_symbol_exists, "Both gene_ensembl and gene_symbol must exist in adata.var"
+    adata = add_gene_symbol_and_ensembl(adata, organism=adata.uns.get("organism", "human"))
 
     '''
     Dataset and dataloader preparation for embedding.
@@ -126,8 +95,18 @@ if __name__ == "__main__":
             elif isinstance(v, torch.Tensor):
                 inputs[k] = v.to(device)
 
-        embeds = model.encode_cell(**inputs)
+        if args.mode == "cell":
+            embeds = model.encode_cell(**inputs)
+        elif args.mode == "gene":
+            embeds = model.encode_gene(**inputs)
         embeddings.append(embeds)
 
     embeddings = torch.cat(embeddings, dim=0)
-    print(f"Done. Embeddings of shape {embeddings.shape}")
+    
+    np.save(args.output, embeddings.cpu().numpy())
+    print(f"Saved embeddings to {args.output}")
+
+    if args.mode == "cell":
+        print(f"Done. Cell embeddings of shape {embeddings.shape}")
+    elif args.mode == "gene":
+        print(f"Done. Gene embeddings of shape {embeddings.shape}")

@@ -69,7 +69,31 @@ gene_embeddings = model.encode_gene(**inputs) # (N, G, D)
 
 ```
 
+### or using CLI
+
+```bash
+# Example: Tabula Sapiens lung data (downloaded automatically)
+python tasks/embedding.py \
+    --model scGPT_human \
+    --output embeddings.npy
+
+# Use a local .h5ad file
+python tasks/embedding.py \
+    --model Geneformer-V2-104M \
+    --input <path to local .h5ad file> \
+    --output <path to save embeddings>
+
+# Download a remote .h5ad file
+python tasks/embedding.py \
+    --model scGPT_human \
+    --input_url <URL to a remote .h5ad file> \
+    --output <path to save embeddings>
+```
+
+Supported embedding models: `scGPT_human`, `Geneformer-V2-104M`, and `Geneformer-V1-10M`.
+
 ## Perturbation Response Prediction (PRP) task
+Using your own dataset? See [Bring your own data](#bring-your-own-data) for the required format and annotations.
 
 ```python
 from nanomirrors.data import load_dataset
@@ -88,7 +112,33 @@ history = trainer.train(train_data=data, val_data=None, checkpoint_path="./run")
 
 ```
 
-## Bring your own data
+or use CLI
+
+```sh
+cd /src/nanomirrors
+
+# Example: train/evaluate on adamson2016 dataset (preprocessed, downloaded automatically)
+python tasks/perturbation_response_prediction.py \
+    --input_name adamson2016 \
+    --model State
+    --mode <train/test>
+
+# Or on your custom dataset
+python tasks/finetune_perturbation.py  \
+    --input <path to local .h5ad file> \
+    --model scGPT
+    --mode <train/test>
+
+# Or data from remote URL
+python tasks/finetune_perturbation.py  \
+    --input_url <path to local .h5ad file> \
+    --model Geneformer-V2-104M
+    --mode <train/test>
+
+```
+Supported PRP models: `State`, `scGPT_human`, `Geneformer-V2-104M`, and `Geneformer-V1-10M`.
+
+### Bring your own data
 
 Use an `AnnData` object with **cells as rows and genes as columns**, plus these annotations:
 

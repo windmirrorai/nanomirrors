@@ -11,8 +11,10 @@ from dataclasses import asdict
 import numpy as np
 import torch
 import anndata as ad
-import perturb_datasets
+import scanpy as sc
 
+from nanomirrors.data import load_dataset, list_datasets, validate_adata
+from nanomirrors.auto import list_models
 from nanomirrors.auto import AutoTrainerForPerturbationResponsePrediction
 
 MODEL_CHOICES = ["scGPT_human", 
@@ -22,6 +24,18 @@ MODEL_CHOICES = ["scGPT_human",
 DATASETS_CHOICES = ["adamson2016"]
 
 def get_train_val_test_data(adata: ad.AnnData, split_col: str = "split"):
+    if split_col not in adata.obs:
+        print(f"Split column '{split_col}' not found in adata.obs. Randomly assigning cells to splits.")
+        num_cells = adata.n_obs
+        pert_idx = np.flatnonzero(~adata.obs["is_control"])
+        split_values = np.array(["control"] * num_cells)
+        split_values[pert_idx] = np.random.choice(["train", "val", "test"], size=len(pert_idx), p=[0.7, 0.1, 0.2])
+        adata.obs[split_col] = split_values
+    else:
+        if not set(adata.obs[split_col].unique()).issuperset({"train", "val", "test", "control"}):
+            raise ValueError(f"Split column '{split_col}' must contain at least 'train', 'val', 'test', and 'control' values.")
+        print(f"Using existing split column '{split_col}' with values: {adata.obs[split_col].unique()}")
+
     train_data = adata[(adata.obs[split_col] == "train") | (adata.obs[split_col] == "control")]
     val_data = adata[(adata.obs[split_col] == "val") | (adata.obs[split_col] == "control")]
     test_data = adata[(adata.obs[split_col] == "test") | (adata.obs[split_col] == "control")]
@@ -48,9 +62,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, required=False, help="Path to the local input .h5ad file.")
     parser.add_argument("--input_url", type=str, required=False, help="URL to the input .h5ad file. Ignored if --input is provided.")
-    parser.add_argument("--input_name", type=str, default="adamson2016", help="Name of the input dataset.", choices=DATASETS_CHOICES)
+    parser.add_argument("--input_name", type=str, default="adamson2016", help="Name of the input dataset.", choices=list_datasets())
+    parser.add_argument("--split_col", type=str, default="split", help="Column in adata.obs to use for train/val/test splits.")
 
-    parser.add_argument("--model", type=str, choices=MODEL_CHOICES, default="State", help="Type of model to train.")
+    parser.add_argument("--model", type=str, choices=list_models(), default="State", help="Type of model to train.")
     parser.add_argument("--batch_size", type=int, help="Batch size for training and evaluation.")
 
     parser.add_argument("--cell_set_size", type=int, help="Cell set size for the model.")
@@ -88,11 +103,26 @@ if __name__ == "__main__":
         print(f"Arguments: {args}")
 
     '''
-    Load the dataset and prepare train, validation, and test splits
+    Load the dataset and prepare train, validation, and test splits.
     '''
-    data = perturb_datasets.load_dataset(args.input_name)
+    if args.input is not None:
+        data = sc.read(args.input)
+    elif args.input_url is not None:
+        print(f"Downloading input data from {args.input_url}...")
+        os.makedirs("downloaded_data", exist_ok=True)
+        if os.path.exists("downloaded_data/tmp.h5ad"):
+            os.remove("downloaded_data/tmp.h5ad")
+        data = sc.read("downloaded_data/tmp.h5ad", backup_url=args.input_url)
+    else:
+        data = load_dataset(args.input_name)
+
+    validate_adata(data, type="perturbation")
     print(f"dataset loaded with shape {data.shape}")
-    train_data, val_data, test_data = get_train_val_test_data(data)
+
+    # NOTE: `split_col` in `adata.obs` will be used to determine the splits. 
+    # `split_col` must contain at least the values `train`, `val`, `test`, and `control`.
+    # If it does not exist, random splits will be assigned to the cells, with control cells labeled as `control`.
+    train_data, val_data, test_data = get_train_val_test_data(data, split_col=args.split_col)
     
     num_train_perturbations = len([x for x in train_data.obs['perturbation'].unique().tolist() if x != 'control'])
     num_val_perturbations = len([x for x in val_data.obs['perturbation'].unique().tolist() if x != 'control'])
@@ -165,14 +195,3 @@ if __name__ == "__main__":
                 }, f, indent=4)
     
     print(f"Done. Saved results to {args.save_dir} .")
-
-
-
-
-
-
-
-
-
-
-

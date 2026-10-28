@@ -25,11 +25,11 @@ class scGPTTrainerConfig:
     amp: bool = True # Use automatic mixed precision during training
     scheduler_gamma: float = 0.9
 
-    early_stopping_patience: int = 5 # Number of validation steps to wait before early stopping
+    early_stopping_patience: int = 20 # Number of validation steps to wait before early stopping
     gradient_clip_norm: float = 1.0
 
-    val_every: int = 10
-    log_every: int = 50
+    val_every: int = 50
+    log_every: int = 20
 
 class scGPTTrainerForPerturbationResponsePrediction:
 

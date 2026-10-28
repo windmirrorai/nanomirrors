@@ -21,12 +21,6 @@ MODEL_CHOICES = ["scGPT_human",
                  "Geneformer-V1-10M"]
 DATASETS_CHOICES = ["adamson2016"]
 
-PERTURBATION_METHODS = [
-    "CRISPRi",
-    "CRISPRa",
-    "CRISPR-Cas9",
-]
-
 def get_train_val_test_data(adata: ad.AnnData, split_col: str = "split"):
     train_data = adata[(adata.obs[split_col] == "train") | (adata.obs[split_col] == "control")]
     val_data = adata[(adata.obs[split_col] == "val") | (adata.obs[split_col] == "control")]
