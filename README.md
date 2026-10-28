@@ -7,7 +7,6 @@
 
 > Questions, ideas, or simply want to discuss more about AIxBio? [Join our Discord](https://discord.com/channels/1555659539536158822/1555659540794708051).
 > Found a bug? [Open an issue](https://github.com/windmirrorai/nanomirrors/issues).
-> ⭐ Star the repo to follow along.
 
 
 <!-- > [!NOTE]
