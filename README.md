@@ -5,7 +5,7 @@
 <h3 align="center">nanomirrors</h3>
 <h3 align="center">Minimal, readable, production-ready SOTA bio cell models</h3>
 
-> Questions, ideas, or simply want to discuss more about AIxBio? [Join our Discord]((https://discord.com/channels/1555659539536158822/1555659540794708051)).
+> Questions, ideas, or simply want to discuss more about AIxBio? [Join our Discord](https://discord.com/channels/1555659539536158822/1555659540794708051).
 > Found a bug? [Open an issue](https://github.com/windmirrorai/nanomirrors/issues).
 > ⭐ Star the repo to follow along.
 
@@ -57,7 +57,7 @@ Step-by-step tutorials to help you get started:
 
 | Tutorial | Example Code | Colab Notebook |
 |---|---|---|
-| Cell embeddings | [View](./example.py) | [Open in Colab](https://colab.research.google.com/github/windmirrorai/nanomirrors/blob/main/tutorials/01_cell_embeddings.ipynb) |
+| Cell embeddings | [View](./example.py) | [Open in Colab](https://colab.research.google.com/drive/1t5_HpgOD0_60v5qSE9wgGPK-WzaYwkSK?usp=sharing) |
 | Perturbation response prediction | [View](./example_perturbation_response_prediction.py) | - |
 <!-- | Preparing custom data | [View](tutorials/03_custom_data.ipynb) | [Open in Colab](https://colab.research.google.com/github/windmirrorai/nanomirrors/blob/main/tutorials/03_custom_data.ipynb) | -->
 
