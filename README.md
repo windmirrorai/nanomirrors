@@ -153,7 +153,7 @@ python tasks/finetune_perturbation.py  \
 ```
 Supported PRP models: `State`, `scGPT_human`, `Geneformer-V2-104M`, and `Geneformer-V1-10M`.
 
-### Bring your own data
+## Bring your own data
 
 Use an `AnnData` object with **cells as rows and genes as columns**, plus these annotations:
 
