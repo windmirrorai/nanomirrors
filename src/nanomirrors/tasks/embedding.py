@@ -53,7 +53,11 @@ if __name__ == "__main__":
     '''
     Ensure that both gene symbols and Ensembl IDs exist in the dataset.
     '''
-    adata = add_gene_symbol_and_ensembl(adata, organism=adata.uns.get("organism", "human"))
+    # import pdb; pdb.set_trace()
+    organism = adata.uns.get("organism", "human")
+    if organism.lower() == "homo sapiens":
+        organism = "human"
+    adata = add_gene_symbol_and_ensembl(adata, organism=organism)
 
     '''
     Dataset and dataloader preparation for embedding.
@@ -78,30 +82,48 @@ if __name__ == "__main__":
         device = torch.device("mps")
 
     model = AutoModel.from_pretrained(args.model)
+    model.eval()
     model.to(device)
+    if device.type == "cuda":
+        model = torch.compile(model)
 
     gene_format = MODEL2GENE_FORMAT.get(args.model, "gene_symbol")
     input_encoder = AutoInputEncoder.from_pretrained(args.model,
                                                      gene_names=adata.var[gene_format].tolist())
 
 
+    amp_dtype = (
+        torch.bfloat16
+        if device.type == "cpu"
+        or (
+            device.type == "cuda"
+            and torch.cuda.is_bf16_supported()
+        )
+        else torch.float16
+    )
     print("Running embedding inference...")
     embeddings = []
-    for i, batch in tqdm(enumerate(dataloader), desc="Running embedding inference", total=len(dataloader)):
-        inputs = input_encoder.encode(batch)
-        for k, v in inputs.items():
-            if isinstance(v, np.ndarray):
-                inputs[k] = torch.from_numpy(v).to(device)
-            elif isinstance(v, torch.Tensor):
-                inputs[k] = v.to(device)
+    with torch.no_grad(), torch.amp.autocast(
+            device_type=device.type, 
+            dtype=amp_dtype,
+            enabled=device.type == "cuda"):
+        for i, batch in tqdm(enumerate(dataloader), desc="Running embedding inference", total=len(dataloader)):
+            inputs = input_encoder.encode(batch)
+            for k, v in inputs.items():
+                if isinstance(v, np.ndarray):
+                    inputs[k] = torch.from_numpy(v).to(device)
+                elif isinstance(v, torch.Tensor):
+                    inputs[k] = v.to(device)
 
-        if args.mode == "cell":
-            embeds = model.encode_cell(**inputs)
-        elif args.mode == "gene":
-            embeds = model.encode_gene(**inputs)
-        embeddings.append(embeds)
+            if args.mode == "cell":
+                embeds = model.encode_cell(**inputs)
+            elif args.mode == "gene":
+                embeds = model.encode_gene(**inputs)
+            embeddings.append(embeds.cpu())
 
     embeddings = torch.cat(embeddings, dim=0)
+    embeddings = embeddings / torch.linalg.norm(embeddings, dim=-1, keepdim=True)
+
     
     np.save(args.output, embeddings.cpu().numpy())
     print(f"Saved embeddings to {args.output}")
