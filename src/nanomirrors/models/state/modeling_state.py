@@ -201,6 +201,10 @@ class StateForPerturbationResponsePrediction(nn.Module):
             return output, gene_expr
         return output
 
+    def get_num_params(self) -> int:
+        n_params = sum(p.numel() for p in self.parameters())
+        return n_params
+
     @classmethod
     def from_pretrained(cls, n_genes: int, model_name: str="State", **kwargs):
         # NOTE: Currently only supports state models from scratch from a given configuration;
@@ -220,7 +224,7 @@ class StateForPerturbationResponsePrediction(nn.Module):
 
         base = cls(config)
 
-        print(f"Initialized State model. No pretrained weights are loaded.")
+        print(f"Initialized State model with {base.get_num_params()/1e6:.2f}M params. No pretrained weights are loaded.")
         
         return base
 

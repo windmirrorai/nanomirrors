@@ -7,10 +7,10 @@ import random
 import numpy as np
 import torch
 import anndata as ad
-import perturb_datasets
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
+from nanomirrors.data import load_dataset
 from nanomirrors.models.scgpt.modeling_scgpt import scGPTForPerturbationResponsePrediction
 from nanomirrors.models.scgpt.configuration_scgpt import scGPTConfig
 from nanomirrors.models.scgpt.training_scgpt import scGPTTrainerForPerturbationResponsePrediction, scGPTTrainerConfig
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     '''
     Load the dataset and prepare train, validation, and test splits
     '''
-    data = perturb_datasets.load_dataset(args.input_name)
+    data = load_dataset(args.input_name)
     print(f"dataset loaded with shape {data.shape}")
     train_data, val_data, test_data = get_train_val_test_data(data)
     

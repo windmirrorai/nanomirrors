@@ -5,9 +5,14 @@
 <h3 align="center">nanomirrors</h3>
 <h3 align="center">Minimal, readable, production-ready SOTA bio cell models</h3>
 
-> [!NOTE]
+> Questions, ideas, or simply want to discuss more about AIxBio? [Join our Discord]((https://discord.com/channels/1555659539536158822/1555659540794708051)).
+> Found a bug? [Open an issue](https://github.com/windmirrorai/nanomirrors/issues).
+> ⭐ Star the repo to follow along.
+
+
+<!-- > [!NOTE]
 > **🚧 nanomirrors is in beta, with the public launch coming soon.** APIs may change slightly and some features are still landing.
-> Try it out and tell us what breaks: [open an issue](https://github.com/windmirrorai/nanomirrors/issues) and ⭐ the repo to follow along.
+> Try it out and tell us what breaks: [open an issue](https://github.com/windmirrorai/nanomirrors/issues) and ⭐ the repo to follow along. -->
 
 <!-- <p align="center">
   <a href="https://pypi.org/project/nanomirrors/"><img src="https://img.shields.io/pypi/v/nanomirrors.svg" alt="PyPI"></a>
@@ -45,6 +50,16 @@ Option B: using pip
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
+
+## Tutorials
+
+Step-by-step tutorials to help you get started:
+
+| Tutorial | Example Code | Colab Notebook |
+|---|---|---|
+| Cell embeddings | [View](./example.py) | [Open in Colab](https://colab.research.google.com/github/windmirrorai/nanomirrors/blob/main/tutorials/01_cell_embeddings.ipynb) |
+| Perturbation response prediction | [View](./example_perturbation_response_prediction.py) | - |
+<!-- | Preparing custom data | [View](tutorials/03_custom_data.ipynb) | [Open in Colab](https://colab.research.google.com/github/windmirrorai/nanomirrors/blob/main/tutorials/03_custom_data.ipynb) | -->
 
 ## Quick Start
 
@@ -96,6 +111,7 @@ Supported embedding models: `scGPT_human`, `Geneformer-V2-104M`, and `Geneformer
 Using your own dataset? See [Bring your own data](#bring-your-own-data) for the required format and annotations.
 
 ```python
+import torch
 from nanomirrors.data import load_dataset
 from nanomirrors.auto import AutoTrainerForPerturbationResponsePrediction
 
@@ -104,8 +120,8 @@ data = load_dataset("adamson2016") # load preprocessed perturbation dataset from
 # Automatically intialize model, configs, and corresponding trainer 
 trainer = AutoTrainerForPerturbationResponsePrediction.from_model(
     model_name="State",
-    n_genes=2000, # number of genes in data
-    device="cuda"
+    n_genes=data.shape[1], # number of genes in data
+    device=torch.device("cuda")
 )
 
 history = trainer.train(train_data=data, val_data=None, checkpoint_path="./run")
@@ -177,7 +193,7 @@ Use the model identifier below when loading a model or trainer.
 | **scGPT** | `"scGPT_human"` | ✅ | ✅ |
 | **Geneformer V2** | `"Geneformer-V2-104M"` | ✅ | ✅ |
 | **Geneformer V1** | `"Geneformer-V1-10M"` | ✅ | ✅ |
-| **State** | `"State"` | — | ✅ |
+| **State** | `"State"` | — | (ST+HVG) ✅ , (SE+ST) coming soon  |
 
 **PRP** = perturbation response prediction. 
 

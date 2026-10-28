@@ -194,7 +194,7 @@ class scGPTModel(nn.Module):
                     exprs: torch.Tensor, 
                     padding_mask: torch.BoolTensor | None = None, 
                     batch_labels: torch.Tensor | None = None) -> torch.Tensor:
-        h = self.forward(gene_tokens, exprs, padding_mask, batch_labels) # [B, T, n_embd]
+        h = self.forward(gene_tokens, exprs, padding_mask, pert_labels=None, batch_labels=batch_labels) # [B, T, n_embd]
         cls_embd = h[:, 0, :]
         
         return cls_embd
@@ -204,7 +204,7 @@ class scGPTModel(nn.Module):
                     exprs: torch.Tensor, 
                     padding_mask: torch.BoolTensor | None = None, 
                     batch_labels: torch.Tensor | None = None) -> torch.Tensor:
-        h = self.forward(gene_tokens, exprs, padding_mask, batch_labels) # [B, T, n_embd]
+        h = self.forward(gene_tokens, exprs, padding_mask, pert_labels=None, batch_labels=batch_labels) # [B, T, n_embd]
         
         return h
     

@@ -7,10 +7,10 @@ import random
 import numpy as np
 import torch
 import anndata as ad
-import perturb_datasets
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
+from nanomirrors.data import load_dataset
 from nanomirrors.models.geneformer.modeling_geneformer import GeneformerForPerturbationResponsePrediction
 from nanomirrors.models.geneformer.configuration_geneformer import GeneformerConfig
 from nanomirrors.models.geneformer.training_geneformer import GeneformerTrainerForPerturbationResponsePrediction, GeneformerTrainerConfig
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     '''
     Load the dataset and prepare train, validation, and test splits
     '''
-    data = perturb_datasets.load_dataset(args.input_name)
+    data = load_dataset(args.input_name)
     print(f"dataset loaded with shape {data.shape}")
     train_data, val_data, test_data = get_train_val_test_data(data)
     
